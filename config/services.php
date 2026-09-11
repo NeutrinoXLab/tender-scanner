@@ -2,6 +2,10 @@
 
 return [
 
+    'seap' => [
+        'request_delay_ms' => (int) env('SEAP_REQUEST_DELAY_MS', 1000),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

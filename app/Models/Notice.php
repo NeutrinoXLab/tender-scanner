@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Notice extends Model
 {
     protected $fillable = [
+        'seap_metadata',
+        'source', 'ted_id', 'ted_url', 'ted_data',
         'seap_id',
         'notice_number',
         'title',
@@ -47,6 +51,7 @@ class Notice extends Model
     ];
 
     protected $casts = [
+        'seap_metadata' => 'array',
         'estimated_value' => 'decimal:2',
 
         'publication_date' => 'datetime',
@@ -56,5 +61,66 @@ class Notice extends Model
         'is_eu_funded' => 'boolean',
 
         'raw_data' => 'array',
+        'ted_data' => 'array',
     ];
+
+    public function sources(): HasMany
+    {
+        return $this->hasMany(NoticeSource::class);
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(NoticeRevision::class);
+    }
+
+    public function scopeSeapOpportunities(Builder $query, bool $includeHistory = false): void
+    {
+        $query->where(function (Builder $query) use ($includeHistory): void {
+            $query->where('source', '!=', 'seap')->orWhereNull('seap_metadata')
+                ->orWhere(function (Builder $query) use ($includeHistory): void {
+                    $query->whereIn('seap_metadata->category', ['opportunity', 'planning']);
+                    if (! $includeHistory) {
+                        $query->where(function (Builder $query): void {
+                            $query->whereNull('submission_deadline')->orWhere('submission_deadline', '>=', now('Europe/Bucharest')->format('Y-m-d H:i:s'));
+                        })->where(function (Builder $query): void {
+                            $query->whereNull('status')->orWhereIn('status', ['Publicat', 'In desfasurare', 'În desfășurare']);
+                        });
+                    }
+                });
+        });
+    }
+
+    /** @return array<int, array{label: string, text: string}> */
+    public function summaryItems(): array
+    {
+        $items = [];
+        $seen = [];
+        $add = function (string $label, mixed $value) use (&$items, &$seen): void {
+            if (! is_string($value)) {
+                return;
+            }
+            $text = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $text = preg_replace('/<\s*(?:br\b[^>]*|\/p|\/div|\/li)\s*>/iu', ' ', $text);
+            $text = trim(preg_replace('/\s+/u', ' ', strip_tags($text)) ?? '');
+            if ($text === '' || isset($seen[$text])) {
+                return;
+            }
+            $seen[$text] = true;
+            $items[] = ['label' => $label, 'text' => $text];
+        };
+        $add('Obiectul achiziției', $this->description);
+        $add('Cerințe și cantități', data_get($this->raw_data, 'section21.section22.shortDescription'));
+        $sections = data_get($this->raw_data, 'piNoticeV2.section2', []);
+        foreach (is_array($sections) ? $sections : [] as $section) {
+            $add('Obiectul achiziției', data_get($section, 'section2_1.description'));
+            $lots = data_get($section, 'section2_2.lots.items', []);
+            foreach (is_array($lots) ? $lots : [] as $lot) {
+                $add('Cerințe și cantități', data_get($lot, 'descriptionOfProcurement'));
+                $add('Informații suplimentare', data_get($lot, 'additionalInformation'));
+            }
+        }
+
+        return $items;
+    }
 }

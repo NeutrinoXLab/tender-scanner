@@ -30,6 +30,10 @@ return [
     */
 
     'connections' => [
+        'tender' => [
+            'driver' => 'database', 'table' => 'jobs', 'queue' => 'tender-scans',
+            'retry_after' => 21720, 'after_commit' => false,
+        ],
 
         'sync' => [
             'driver' => 'sync',
@@ -84,6 +88,10 @@ return [
         'failover' => [
             'driver' => 'failover',
             'connections' => [
+                'tender' => [
+                    'driver' => 'database', 'table' => 'jobs', 'queue' => 'tender-scans',
+                    'retry_after' => 7200, 'after_commit' => false,
+                ],
                 'database',
                 'deferred',
             ],
