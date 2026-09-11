@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Notice;
+use App\Models\User;
 use App\Services\TedImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -24,6 +25,7 @@ class TedImportTest extends TestCase
 
     public function test_import_maps_romanian_data_and_reimport_updates_without_duplicates(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         $importer = app(TedImporter::class);
         $notice = $importer->import($this->item());
@@ -40,6 +42,7 @@ class TedImportTest extends TestCase
 
     public function test_exact_seap_link_links_sources_without_overwriting_seap_data(): void
     {
+        $this->actingAs(User::factory()->create());
         $seap = Notice::create(['seap_id' => '100073686', 'title' => 'Titlu SEAP', 'description' => 'Detalii SEAP']);
         $item = $this->item();
         $item['submission-url-lot'] = ['https://www.e-licitatie.ro/pub/notices/pi-notice/view/v2/100073686'];
@@ -52,6 +55,7 @@ class TedImportTest extends TestCase
 
     public function test_similar_titles_are_not_merged_and_filters_and_details_render(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         Notice::create(['seap_id' => '123', 'title' => 'Carburanți']);
         $ted = app(TedImporter::class)->import($this->item());
@@ -64,6 +68,7 @@ class TedImportTest extends TestCase
 
     public function test_command_paginates_and_filters_romania_and_dates(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fakeSequence()->push(['notices' => [$this->item()], 'totalNoticeCount' => 2, 'iterationNextToken' => 'next'])
             ->push(['notices' => [$this->item('623178-2026')], 'totalNoticeCount' => 2, 'iterationNextToken' => null]);
@@ -75,6 +80,7 @@ class TedImportTest extends TestCase
 
     public function test_invalid_dates_do_not_call_ted_and_partial_import_reports_failure(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         $this->artisan('ted:scan', ['--from' => 'invalid'])->assertFailed();
         Http::assertNothingSent();
@@ -85,6 +91,7 @@ class TedImportTest extends TestCase
 
     public function test_malformed_api_response_is_not_reported_as_success(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::fake(['*' => Http::response(['error' => 'Invalid'])]);
         $this->artisan('ted:scan')->assertFailed();
         $this->assertDatabaseCount('notices', 0);
@@ -92,6 +99,7 @@ class TedImportTest extends TestCase
 
     public function test_empty_page_before_reported_total_is_a_failure(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::fakeSequence()->push(['notices' => [$this->item()], 'totalNoticeCount' => 2])
             ->push(['notices' => [], 'totalNoticeCount' => 2]);
         $this->artisan('ted:scan')->assertFailed();
@@ -100,6 +108,7 @@ class TedImportTest extends TestCase
 
     public function test_repeated_page_is_rejected_instead_of_claiming_complete_import(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::fakeSequence()->push(['notices' => [$this->item()], 'totalNoticeCount' => 2])
             ->push(['notices' => [$this->item()], 'totalNoticeCount' => 2]);
         $this->artisan('ted:scan')->assertFailed();
@@ -108,6 +117,7 @@ class TedImportTest extends TestCase
 
     public function test_reference_to_an_older_notice_is_not_merged(): void
     {
+        $this->actingAs(User::factory()->create());
         Notice::create(['seap_id' => '999', 'title' => 'Nou', 'raw_data' => ['previousNotice' => '623177-2026']]);
         app(TedImporter::class)->import($this->item());
         $this->assertDatabaseCount('notices', 2);

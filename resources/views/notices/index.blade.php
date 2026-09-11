@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"><meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Tender Scanner — Licitații</title>
@@ -10,7 +10,7 @@
 </head>
 
 <body class="bg-gray-100">
-    <nav class="bg-white border-b px-6 py-4"><a href="{{ route('notices.index') }}" class="font-bold text-blue-700">Tender Scanner</a><span class="ml-6 text-gray-600">Licitații</span></nav>
+    <x-navigation />
 
     <div class="max-w-7xl mx-auto px-4 py-8">
 
@@ -402,7 +402,7 @@
 
                         {{-- Număr și status --}}
                         <p class="text-xs text-gray-600">
-                            {{ $notice->is_saved ? '⭐ Salvată · ' : ($notice->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personal_status] ?? 'Nouă' }}
+                            {{ $notice->personalEntries->first()?->is_saved ? '⭐ Salvată · ' : ($notice->personalEntries->first()?->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personalEntries->first()?->personal_status] ?? 'Nouă' }}
                         </p>
                         <div class="flex flex-wrap items-center gap-2">
 

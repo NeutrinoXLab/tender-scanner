@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"><meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caută furnizori — {{ $notice->notice_number }} — Tender Scanner</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="bg-gray-100">
-    <nav class="bg-white border-b px-6 py-4"><a href="{{ route('notices.index') }}" class="font-bold text-blue-700">Tender Scanner</a></nav>
+    <x-navigation />
     <main class="max-w-5xl mx-auto px-4 py-8">
         <a class="text-blue-600 hover:underline" href="{{ route('notices.show', $notice) }}">← Înapoi la licitație</a>
         <header class="my-6">

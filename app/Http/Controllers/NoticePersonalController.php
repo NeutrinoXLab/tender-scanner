@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notice;
+use App\Models\UserNotice;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -26,7 +27,8 @@ class NoticePersonalController extends Controller
             'restore' => ['is_ignored' => false],
             'update' => ['personal_status' => $validated['personal_status'], 'personal_notes' => $validated['personal_notes'] ?? null],
         };
-        $notice->forceFill($attributes)->save();
+        $personal = UserNotice::firstOrCreate(['user_id' => $request->user()->id, 'notice_id' => $notice->id]);
+        $personal->fill($attributes)->save();
         $message = match ($validated['action']) {
             'save' => 'Licitația a fost salvată.',
             'unsave' => 'Licitația a fost eliminată din salvate.',

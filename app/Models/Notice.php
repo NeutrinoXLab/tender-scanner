@@ -3,11 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Notice extends Model
 {
+    use HasFactory;
+
+    public function personalEntries(): HasMany
+    {
+        return $this->hasMany(UserNotice::class);
+    }
+
     public const PERSONAL_STATUSES = [
         'new' => 'Nouă', 'analyzing' => 'Analizez', 'requesting_quote' => 'Cer ofertă',
         'participating' => 'Particip', 'declined' => 'Renunț',

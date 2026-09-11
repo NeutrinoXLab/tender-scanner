@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Notice;
+use App\Models\User;
 use App\Services\SupplierSearchProvider;
 use App\Services\SupplierSearchResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,6 +16,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_supplier_page_explains_unconfigured_source_and_keeps_search_editable(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         Http::preventStrayRequests();
         config(['services.price_scanner.search_url' => null]);
@@ -30,6 +32,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_sends_manually_edited_query_and_renders_multiple_real_provider_results_with_missing_values(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $notice = Notice::create(['seap_id' => 'suppliers', 'title' => 'Echipamente IT', 'cpv_code' => '30200000-1']);
         $this->mock(SupplierSearchProvider::class, function ($mock) use ($notice): void {
@@ -49,6 +52,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_configured_provider_is_not_called_until_search_is_submitted(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $notice = Notice::create(['seap_id' => 'suppliers', 'title' => 'Laptop', 'description' => 'Imprimante']);
         $this->mock(SupplierSearchProvider::class, function ($mock): void {
@@ -61,6 +65,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_empty_provider_result_and_provider_exception_have_clear_messages(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $notice = Notice::create(['seap_id' => 'suppliers', 'title' => 'Laptop']);
         $this->mock(SupplierSearchProvider::class, function ($mock): void {
@@ -76,6 +81,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_rejects_invalid_query_and_unknown_notices_without_calling_provider(): void
     {
+        $this->actingAs(User::factory()->create());
         $notice = Notice::create(['seap_id' => 'suppliers', 'title' => 'Laptop']);
         $this->mock(SupplierSearchProvider::class, fn ($mock) => $mock->shouldNotReceive('search'));
         $url = route('notices.suppliers', $notice);
@@ -89,6 +95,7 @@ class NoticeSupplierTest extends TestCase
 
     public function test_escapes_query_and_redirects_merged_notice_to_canonical_supplier_page(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         config(['services.price_scanner.search_url' => null]);
         $notice = Notice::create(['seap_id' => 'suppliers', 'title' => 'Laptop']);

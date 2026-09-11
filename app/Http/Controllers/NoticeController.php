@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Notice;
 use App\Models\ScanRun;
+use App\Models\UserNotice;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -72,11 +73,18 @@ class NoticeController extends Controller
             ->orderBy('contract_assignment_type')
             ->pluck('contract_assignment_type');
 
-        $notices = Notice::query()->whereNull('canonical_notice_id')->with('sources')
+        $userId = request()->user()->id;
+        $personalScope = fn ($query) => $query->where('user_id', $userId);
+        $notices = Notice::query()->whereNull('canonical_notice_id')->with(['sources', 'personalEntries' => $personalScope])
             ->seapOpportunities(request()->boolean('seap_history') || $collection !== 'all')
-            ->when($collection === 'saved', fn ($query) => $query->where('is_saved', true))
-            ->when($collection === 'ignored', fn ($query) => $query->where('is_ignored', true))
-            ->when($personalStatus, fn ($query) => $query->where('personal_status', $personalStatus))
+            ->when($collection === 'saved', fn ($query) => $query->whereHas('personalEntries', fn ($states) => $personalScope($states)->where('is_saved', true)))
+            ->when($collection === 'ignored', fn ($query) => $query->whereHas('personalEntries', fn ($states) => $personalScope($states)->where('is_ignored', true)))
+            ->when($personalStatus, fn ($query) => $query->where(function ($query) use ($personalScope, $personalStatus) {
+                $query->whereHas('personalEntries', fn ($states) => $personalScope($states)->where('personal_status', $personalStatus));
+                if ($personalStatus === 'new') {
+                    $query->orWhereDoesntHave('personalEntries', $personalScope);
+                }
+            }))
             ->when($source === 'seap', fn ($query) => $query->where('source', 'seap'))
             ->when($source === 'ted', fn ($query) => $query->where(function ($query) {
                 $query->whereNotNull('ted_id')->orWhereHas('sources', fn ($sources) => $sources->where('source', 'ted'));
@@ -168,8 +176,9 @@ class NoticeController extends Controller
             return redirect()->route('notices.show', $notice->canonical_notice_id);
         }
         $notice->load('sources');
+        $personal = UserNotice::firstOrNew(['user_id' => request()->user()->id, 'notice_id' => $notice->id]);
         $revisions = $notice->revisions()->latest('id')->paginate(15);
 
-        return view('notices.show', compact('notice', 'revisions'));
+        return view('notices.show', compact('notice', 'revisions', 'personal'));
     }
 }

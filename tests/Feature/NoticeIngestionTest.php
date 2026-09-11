@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Notice;
 use App\Models\NoticeRevision;
+use App\Models\User;
 use App\Services\NoticeIngestor;
 use App\Services\SeapClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,6 +16,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_source_identity_and_revision_are_idempotent(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $notice = $service->ingest('seap', '100', ['title' => 'Lucrări', 'submission_deadline' => '2026-10-01'], []);
         $service->ingest('seap', '100', ['title' => 'Lucrări', 'submission_deadline' => '2026-10-01'], []);
@@ -30,6 +32,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_ted_then_seap_share_the_same_record_using_explicit_reference(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], [], '100');
         $seap = $service->ingest('seap', '100', ['title' => 'SEAP'], []);
@@ -42,6 +45,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_late_reference_merges_without_deleting_old_record_and_old_url_redirects(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $service = app(NoticeIngestor::class);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], []);
@@ -58,6 +62,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_seap_reference_to_ted_is_recognized_and_previous_notice_is_not(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], []);
         $new = $service->ingest('seap', '200', ['title' => 'Alt anunț'], ['previousNotice' => ['tedNoticeNumber' => '123456-2026']]);
@@ -68,6 +73,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_missing_fields_do_not_erase_existing_details(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $notice = $service->ingest('seap', '100', ['title' => 'Titlu', 'description' => 'Detalii existente'], []);
         $service->ingest('seap', '100', ['title' => 'Titlu', 'description' => null], []);
@@ -77,11 +83,13 @@ class NoticeIngestionTest extends TestCase
 
     public function test_home_opens_the_local_tender_catalog(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->get('/')->assertRedirect(route('notices.index'));
     }
 
     public function test_seap_then_ted_can_link_using_the_seap_publication_reference(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $seap = $service->ingest('seap', '100', ['title' => 'SEAP'], ['tedNoticeNumber' => '123456-2026']);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], []);
@@ -91,6 +99,7 @@ class NoticeIngestionTest extends TestCase
 
     public function test_seap_command_uses_shared_import_and_preserves_details_after_network_failure(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->mock(SeapClient::class, function ($mock) {
             $mock->shouldReceive('getFamilyNotices')->andReturn(['total' => 0, 'items' => []]);
             $mock->shouldReceive('getOpenNotices')->twice()->andReturn(['total' => 1, 'items' => [[

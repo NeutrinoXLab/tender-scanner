@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Notice;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,6 +13,7 @@ class NoticeSummaryTest extends TestCase
 
     public function test_search_results_show_description_lot_requirements_and_submission_information(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         Notice::create(['seap_id' => 'summary', 'title' => 'Catering', 'description' => 'Pachete alimentare.', 'raw_data' => [
             'piNoticeV2' => ['section2' => [['section2_2' => ['lots' => ['items' => [[
@@ -26,6 +28,7 @@ class NoticeSummaryTest extends TestCase
 
     public function test_missing_data_and_malformed_sections_do_not_break_results(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         Notice::create(['seap_id' => 'empty', 'title' => 'Empty', 'raw_data' => ['piNoticeV2' => ['section2' => 'invalid']]]);
         $this->get('/notices')->assertOk()->assertSee('Descrierea nu este disponibilă');
@@ -33,6 +36,7 @@ class NoticeSummaryTest extends TestCase
 
     public function test_summary_cleans_markup_deduplicates_and_keeps_long_text_accessible(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $description = '<p>Transport</p><p>zilnic</p>';
         $notice = Notice::create(['seap_id' => 'long', 'title' => 'Long', 'description' => $description, 'raw_data' => [

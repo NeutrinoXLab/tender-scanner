@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\RunManualScan;
 use App\Models\ScanRun;
+use App\Models\User;
 use App\Services\NoticeIngestor;
 use App\Services\ScanContext;
 use App\Services\SeapClient;
@@ -18,6 +19,7 @@ class ManualScanTest extends TestCase
 
     public function test_button_queues_one_run_and_double_click_does_not_start_another(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         Queue::fake();
         $this->get('/notices')->assertOk()->assertSee('Scanează acum');
@@ -30,6 +32,7 @@ class ManualScanTest extends TestCase
 
     public function test_job_reuses_both_commands_counts_real_changes_and_reimport_is_unchanged(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->mock(SeapClient::class, function ($mock) {
             $mock->shouldReceive('getFamilyNotices')->andReturn(['total' => 0, 'items' => []]);
             $mock->shouldReceive('getOpenNotices')->andReturn(['total' => 1, 'items' => [['piNoticeId' => 100, 'title' => 'SEAP']]]);
@@ -52,6 +55,7 @@ class ManualScanTest extends TestCase
 
     public function test_seap_failure_does_not_prevent_ted_and_errors_are_visible(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->mock(SeapClient::class, function ($mock) {
             $mock->shouldReceive('getFamilyNotices')->andReturn(['total' => 0, 'items' => []]);
             $mock->shouldReceive('getOpenNotices')->once()->andThrow(new \RuntimeException('SEAP indisponibil'));
@@ -67,6 +71,7 @@ class ManualScanTest extends TestCase
 
     public function test_updated_counts_exclude_identical_reimports_and_numeric_format_changes(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $notice = $service->ingest('seap', '100', ['title' => 'Titlu', 'estimated_value' => '100.00'], []);
         $run = ScanRun::create(['active_key' => 'manual', 'status' => 'running', 'date_from' => '2026-09-01', 'date_to' => '2026-09-10', 'before_notice_id' => $notice->id]);
@@ -81,6 +86,7 @@ class ManualScanTest extends TestCase
 
     public function test_completed_job_is_not_executed_twice_and_failed_job_releases_button(): void
     {
+        $this->actingAs(User::factory()->create());
         $run = ScanRun::create(['status' => 'completed', 'date_from' => '2026-09-01', 'date_to' => '2026-09-10']);
         $this->mock(SeapClient::class, fn ($mock) => $mock->shouldNotReceive('getOpenNotices'));
         (new RunManualScan($run->id))->handle(app(ScanContext::class));

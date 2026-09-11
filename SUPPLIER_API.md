@@ -1,7 +1,8 @@
 # Integrarea viitoare a furnizorilor prin HTTP
 
-Tender Scanner are un singur spațiu local, fără conturi separate. Salvarea, ignorarea,
-statusul personal și notițele se păstrează pe licitație, separat de datele importate.
+Tender Scanner este privat, cu autentificare și conturi administrate manual. Salvarea,
+ignorarea, statusul personal și notițele se păstrează în `user_notices`, separat pentru
+fiecare pereche utilizator–licitație și separat de datele importate.
 Rezultatele furnizorilor nu sunt persistate. Nu există o legătură la baza Price Scanner.
 
 ## Activare

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Notice;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -18,6 +19,7 @@ class NoticeFundingFilterTest extends TestCase
 
     public function test_funding_filter_distinguishes_yes_no_and_missing_data(): void
     {
+        $this->actingAs(User::factory()->create());
         foreach ([true, false, null] as $index => $value) {
             Notice::create(['seap_id' => (string) $index, 'title' => 'Notice '.$index, 'is_eu_funded' => $value]);
         }
@@ -32,6 +34,7 @@ class NoticeFundingFilterTest extends TestCase
 
     public function test_funding_combines_with_existing_filters(): void
     {
+        $this->actingAs(User::factory()->create());
         $attributes = [
             'title' => 'Echipamente', 'county' => 'Cluj', 'cpv_code' => '12345',
             'status' => 'Activ', 'contract_type' => 'Furnizare', 'procedure_type' => 'Deschisa',
@@ -58,6 +61,7 @@ class NoticeFundingFilterTest extends TestCase
 
     public function test_pagination_preserves_funding_filters(): void
     {
+        $this->actingAs(User::factory()->create());
         for ($i = 0; $i < 21; $i++) {
             Notice::create(['seap_id' => (string) $i, 'title' => 'Notice', 'is_eu_funded' => false, 'funding_program' => 'Regional']);
         }
@@ -69,12 +73,14 @@ class NoticeFundingFilterTest extends TestCase
 
     public function test_invalid_funding_filters_are_rejected(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->getJson('/notices?is_eu_funded=invalid')->assertUnprocessable()->assertJsonValidationErrors('is_eu_funded');
         $this->getJson('/notices?funding_program[]=invalid')->assertUnprocessable()->assertJsonValidationErrors('funding_program');
     }
 
     public function test_funding_input_is_escaped_and_cannot_change_the_query(): void
     {
+        $this->actingAs(User::factory()->create());
         Notice::create(['seap_id' => 'safe', 'title' => 'Notice', 'funding_program' => 'Regional']);
         $input = '<script>alert(1)</script>';
         $this->get('/notices?'.http_build_query(['funding_program' => $input]))
@@ -85,6 +91,7 @@ class NoticeFundingFilterTest extends TestCase
 
     public function test_returns_422_for_array_funding_status_and_oversized_program(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->getJson('/notices?is_eu_funded[]=1')->assertUnprocessable()->assertJsonValidationErrors('is_eu_funded');
         $this->getJson('/notices?funding_program='.str_repeat('a', 256))->assertUnprocessable()->assertJsonValidationErrors('funding_program');
     }

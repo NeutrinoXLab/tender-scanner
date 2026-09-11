@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Notice;
+use App\Models\User;
 use App\Services\NoticeIngestor;
 use App\Services\SeapImporter;
 use Carbon\CarbonImmutable;
@@ -29,6 +30,7 @@ class SeapImportTest extends TestCase
 
     public function test_imports_all_families_without_id_collisions_or_automatic_ted_merges(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->fakeDetails();
         Http::fake([
             'https://e-licitatie.ro/api-pub/PUBLICPINotice/GetAll/' => Http::response(['total' => 1, 'items' => [['piNoticeId' => 100, 'title' => 'Intentie']]]),
@@ -50,6 +52,7 @@ class SeapImportTest extends TestCase
 
     public function test_paginates_by_returned_rows_deduplicates_and_counts_actual_updates(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->fakeDetails();
         Http::fake(['https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::sequence()
             ->push(['total' => 3, 'items' => [['cNoticeID' => 100, 'contractTitle' => 'Unu'], ['cNoticeID' => 100, 'contractTitle' => 'Unu']]])
@@ -69,6 +72,7 @@ class SeapImportTest extends TestCase
 
     public function test_splits_date_range_into_inclusive_days(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fake(['https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
 
@@ -82,6 +86,7 @@ class SeapImportTest extends TestCase
 
     public function test_empty_page_before_reported_total_is_a_failure_not_success(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fake(['https://e-licitatie.ro/api-pub/PublicRFQInvitation/GetAll/' => Http::response(['total' => 5, 'items' => []])]);
 
@@ -91,6 +96,7 @@ class SeapImportTest extends TestCase
 
     public function test_failed_family_does_not_prevent_other_families(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->fakeDetails();
         Http::fake([
             'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response([], 403),
@@ -103,6 +109,7 @@ class SeapImportTest extends TestCase
 
     public function test_partial_detail_failure_keeps_listing_and_successful_sections(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fake([
             'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response(['total' => 1, 'items' => [['cNoticeID' => 100, 'contractTitle' => 'Disponibil']]]),
@@ -120,6 +127,7 @@ class SeapImportTest extends TestCase
 
     public function test_ted_imported_later_does_not_merge_new_seap_families(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $seap = $service->ingest('seap', 'CN:100', ['title' => 'SEAP', 'seap_metadata' => ['family' => 'CN']], ['general' => ['tedNoticeNumber' => '538493-2026']]);
         $ted = $service->ingest('ted', '538493-2026', ['title' => 'TED'], []);
@@ -130,6 +138,7 @@ class SeapImportTest extends TestCase
 
     public function test_invalid_date_range_does_not_send_requests(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         $this->artisan('seap:scan', ['--from' => '2026-09-11', '--to' => '2026-09-10'])->assertFailed();
         Http::assertNothingSent();
@@ -137,6 +146,7 @@ class SeapImportTest extends TestCase
 
     public function test_ip_restriction_stops_all_seap_families_without_more_requests(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fake(['https://e-licitatie.ro/api-pub/PUBLICPINotice/GetAll/' => Http::response('<title>Acces restricționat - SEAP</title>', 403)]);
 
@@ -148,6 +158,7 @@ class SeapImportTest extends TestCase
 
     public function test_active_list_excludes_expired_cancelled_and_award_notices_but_preserves_history_and_ted(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $this->travelTo(CarbonImmutable::parse('2026-09-11T10:00:00+03:00'));
         $service = app(NoticeIngestor::class);
@@ -169,6 +180,7 @@ class SeapImportTest extends TestCase
 
     public function test_failed_enrichment_preserves_previous_sections_and_ted_metadata(): void
     {
+        $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $notice = $service->ingest('seap', 'CN:1', ['title' => 'Titlu', 'description' => 'Detaliu',
             'seap_metadata' => ['family' => 'CN', 'ted_references' => ['general.tedNoticeNumber' => '123456-2026']]],
@@ -186,6 +198,7 @@ class SeapImportTest extends TestCase
 
     public function test_does_not_import_rfq_when_api_returns_it_in_the_scn_family(): void
     {
+        $this->actingAs(User::factory()->create());
         Http::preventStrayRequests();
         Http::fake(['https://e-licitatie.ro/api-pub/PublicRFQInvitation/GetAll/' => Http::response(['total' => 1,
             'items' => [['rfqInvitationId' => 1, 'title' => 'Invitatie', 'sysNoticeType' => ['id' => 12]]]])]);
@@ -198,6 +211,7 @@ class SeapImportTest extends TestCase
 
     public function test_saves_incomplete_report_with_unprocessed_rows_on_restriction(): void
     {
+        $this->actingAs(User::factory()->create());
         $this->travelTo(CarbonImmutable::parse('2026-09-11 10:00:00'));
         Storage::fake('local');
         Http::preventStrayRequests();

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"><meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $notice->notice_number }} - Tender Scanner</title>
 
@@ -9,7 +9,7 @@
 </head>
 
 <body class="bg-gray-100">
-    <nav class="bg-white border-b px-6 py-4"><a href="{{ route('notices.index') }}" class="font-bold text-blue-700">Tender Scanner</a><span class="ml-6 text-gray-600">Licitații</span></nav>
+    <x-navigation />
     <div class="max-w-5xl mx-auto px-4 py-8">
 
         <div class="mb-6">
