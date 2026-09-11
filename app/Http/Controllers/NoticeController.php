@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Notice;
 use App\Models\ScanRun;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class NoticeController extends Controller
@@ -15,10 +16,14 @@ class NoticeController extends Controller
             'is_eu_funded' => ['nullable', 'string', 'in:1,0,unknown'],
             'funding_program' => ['nullable', 'string', 'max:255'],
             'seap_history' => ['nullable', 'boolean'],
+            'collection' => ['nullable', 'string', Rule::in(['all', 'saved', 'ignored'])],
+            'personal_status' => ['nullable', 'string', Rule::in(array_keys(Notice::PERSONAL_STATUSES))],
         ]);
         $source = $validated['source'] ?? null;
         $euFunded = $validated['is_eu_funded'] ?? null;
         $fundingProgram = $validated['funding_program'] ?? null;
+        $collection = $validated['collection'] ?? 'all';
+        $personalStatus = $validated['personal_status'] ?? null;
 
         $search = request('search');
         $county = request('county');
@@ -68,7 +73,10 @@ class NoticeController extends Controller
             ->pluck('contract_assignment_type');
 
         $notices = Notice::query()->whereNull('canonical_notice_id')->with('sources')
-            ->seapOpportunities(request()->boolean('seap_history'))
+            ->seapOpportunities(request()->boolean('seap_history') || $collection !== 'all')
+            ->when($collection === 'saved', fn ($query) => $query->where('is_saved', true))
+            ->when($collection === 'ignored', fn ($query) => $query->where('is_ignored', true))
+            ->when($personalStatus, fn ($query) => $query->where('personal_status', $personalStatus))
             ->when($source === 'seap', fn ($query) => $query->where('source', 'seap'))
             ->when($source === 'ted', fn ($query) => $query->where(function ($query) {
                 $query->whereNotNull('ted_id')->orWhereHas('sources', fn ($sources) => $sources->where('source', 'ted'));
@@ -129,6 +137,8 @@ class NoticeController extends Controller
 
         return view('notices.index', compact(
             'notices',
+            'collection',
+            'personalStatus',
             'latestScan',
             'source',
             'euFunded',

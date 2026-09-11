@@ -27,6 +27,17 @@
 
         @include('notices.scan-panel')
 
+        <nav class="flex flex-wrap gap-2 mb-4" aria-label="Organizarea licitațiilor">
+            @foreach (['all' => 'Toate', 'saved' => '⭐ Salvate', 'ignored' => '🚫 Ignorate'] as $value => $label)
+                <a href="{{ route('notices.index', array_merge(request()->except(['page', 'collection']), ['collection' => $value])) }}"
+                   @if ($collection === $value) aria-current="page" @endif
+                   class="rounded-lg border px-4 py-2 text-sm font-medium {{ $collection === $value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50' }}">{{ $label }}</a>
+            @endforeach
+        </nav>
+        @if ($collection !== 'all')
+            <p class="text-sm text-gray-600 mb-4">Această listă include și procedurile SEAP expirate sau inactive.</p>
+        @endif
+
         {{-- Panou filtre --}}
         <div class="bg-white border rounded-xl p-5 mb-6">
 
@@ -36,6 +47,19 @@
             >
 
                 {{-- Căutare generală --}}
+                <input type="hidden" name="collection" value="{{ $collection }}">
+                @if ($errors->any())
+                    <div role="alert" class="text-sm text-red-700 mb-3">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>
+                @endif
+                <div class="mb-4">
+                    <label for="personal-status-filter" class="block text-sm font-medium text-gray-700 mb-1">Status personal</label>
+                    <select name="personal_status" id="personal-status-filter" class="w-full sm:max-w-xs border border-gray-300 bg-white p-2 rounded-lg">
+                        <option value="">Toate etapele personale</option>
+                        @foreach (\App\Models\Notice::PERSONAL_STATUSES as $value => $label)
+                            <option value="{{ $value }}" @selected($personalStatus === $value)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <label class="block text-sm text-gray-700 mb-4">
                     <input type="checkbox" name="seap_history" value="1" @checked(request()->boolean('seap_history'))>
                     Include și procedurile SEAP cu termen încheiat sau status inactiv
@@ -337,6 +361,7 @@
                     </button>
 
                     @if (
+                        $collection !== 'all' || $personalStatus || request()->boolean('seap_history') ||
                         $source ||
                         $euFunded !== null ||
                         $fundingProgram ||
@@ -376,6 +401,9 @@
                     <div class="flex flex-col gap-2">
 
                         {{-- Număr și status --}}
+                        <p class="text-xs text-gray-600">
+                            {{ $notice->is_saved ? '⭐ Salvată · ' : ($notice->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personal_status] ?? 'Nouă' }}
+                        </p>
                         <div class="flex flex-wrap items-center gap-2">
 
                             <span class="font-semibold text-gray-900">

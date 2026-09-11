@@ -8,6 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Notice extends Model
 {
+    public const PERSONAL_STATUSES = [
+        'new' => 'Nouă', 'analyzing' => 'Analizez', 'requesting_quote' => 'Cer ofertă',
+        'participating' => 'Particip', 'declined' => 'Renunț',
+    ];
+
     protected $fillable = [
         'seap_metadata',
         'source', 'ted_id', 'ted_url', 'ted_data',
@@ -51,6 +56,8 @@ class Notice extends Model
     ];
 
     protected $casts = [
+        'is_saved' => 'boolean',
+        'is_ignored' => 'boolean',
         'seap_metadata' => 'array',
         'estimated_value' => 'decimal:2',
 

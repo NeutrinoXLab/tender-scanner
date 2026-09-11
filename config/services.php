@@ -2,6 +2,11 @@
 
 return [
 
+    'price_scanner' => [
+        'search_url' => env('PRICE_SCANNER_SEARCH_URL'),
+        'token' => env('PRICE_SCANNER_TOKEN'),
+    ],
+
     'seap' => [
         'request_delay_ms' => (int) env('SEAP_REQUEST_DELAY_MS', 1000),
     ],
