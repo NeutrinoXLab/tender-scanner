@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\SeapAccessRestricted;
 use App\Services\SeapClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -70,8 +71,8 @@ class SeapClientTest extends TestCase
         try {
             app(SeapClient::class)->getFamilyNotices('CN', 18, 0, null, null);
             $this->fail('HTTP error expected.');
-        } catch (RequestException $exception) {
-            $this->assertSame(403, $exception->response->status());
+        } catch (SeapAccessRestricted $exception) {
+            $this->assertStringContainsString('403', $exception->getMessage());
             Http::assertSentCount(1);
         }
     }

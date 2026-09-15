@@ -89,7 +89,7 @@ class NoticeIngestor
                 $notice->seap_id = $id;
                 $notice->seap_url = $attributes['seap_url'] ?? 'https://e-licitatie.ro/pub/notices/pi-notice/view/v2/'.$id;
                 if (! isset($payload['piNoticeV2']) && isset($notice->raw_data['piNoticeV2'])) {
-                    $payload = $notice->raw_data;
+                    $payload = array_replace($notice->raw_data, $payload);
                 }
                 if (isset($attributes['seap_metadata']) && is_array($notice->raw_data)) {
                     $payload = array_replace($notice->raw_data, $payload);

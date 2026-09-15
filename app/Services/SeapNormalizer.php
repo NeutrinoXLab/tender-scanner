@@ -50,6 +50,11 @@ class SeapNormalizer
             'family' => $family, 'family_id' => $id,
             'notice_id' => $item['noticeId'] ?? $item['noticeID'] ?? $details['noticeId'] ?? null,
             'procedure_id' => $item['procedureId'] ?? null,
+            'notice_type_id' => $item['sysNoticeTypeId'] ?? data_get($item, 'sysNoticeType.id') ?? $config['type'],
+            'contract_type_id' => data_get($item, 'sysAcquisitionContractType.id') ?? data_get($details, 'sectionGeneral.sysAcquisitionContractType.id'),
+            'procedure_state_id' => data_get($item, 'sysProcedureState.id'),
+            'legislation' => data_get($details, 'sectionGeneral.sysLegislationType'),
+            'is_utility' => $item['isUtilityContract'] ?? data_get($details, 'sectionGeneral.isUtility'),
             'category' => $family === 'PI' ? 'planning' : 'opportunity',
             'ted_references' => $this->tedReferences($details),
         ];

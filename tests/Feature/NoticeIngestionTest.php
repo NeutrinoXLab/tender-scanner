@@ -102,15 +102,17 @@ class NoticeIngestionTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->mock(SeapClient::class, function ($mock) {
             $mock->shouldReceive('getFamilyNotices')->andReturn(['total' => 0, 'items' => []]);
-            $mock->shouldReceive('getOpenNotices')->twice()->andReturn(['total' => 1, 'items' => [[
+            $mock->shouldReceive('getOpenNotices')->times(3)->andReturn(['total' => 1, 'items' => [[
                 'piNoticeId' => 100, 'noticeNo' => 'PI100', 'title' => 'Catering',
             ]]]);
             $mock->shouldReceive('getNoticeDetails')->once()->andReturn(['piNoticeV2' => ['section2' => [[
                 'section2_1' => ['description' => 'Descriere completă'],
             ]]]]);
-            $mock->shouldReceive('getNoticeDetails')->once()->andThrow(new \RuntimeException('Temporar indisponibil'));
+            $mock->shouldReceive('getNoticeDetails')->twice()->andThrow(new \RuntimeException('Temporar indisponibil'));
         });
         $this->artisan('seap:scan')->assertSuccessful();
+        $this->travel(4)->days();
+        $this->artisan('seap:scan')->assertFailed();
         $this->artisan('seap:scan')->assertFailed();
         $this->assertDatabaseCount('notice_sources', 1);
         $notice = Notice::first();

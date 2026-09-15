@@ -16,6 +16,32 @@ class ScanContext
 
     public int $errorCount = 0;
 
+    public function familyProgress(string $family, array $stats): void
+    {
+        $this->families[$family] = $stats;
+        if ($this->runId !== null) {
+            $run = ScanRun::findOrFail($this->runId);
+            $results = $run->results ?? [];
+            $results['seap']['families'][$family] = $stats;
+            $run->update(['results' => $results, 'heartbeat_at' => now()]);
+        }
+    }
+
+    public function checkpoint(string $family): array
+    {
+        return $this->runId === null ? [] : (ScanRun::findOrFail($this->runId)->checkpoint[$family] ?? []);
+    }
+
+    public function saveCheckpoint(string $family, array $state): void
+    {
+        if ($this->runId !== null) {
+            $run = ScanRun::findOrFail($this->runId);
+            $checkpoint = $run->checkpoint ?? [];
+            $checkpoint[$family] = $state;
+            $run->update(['checkpoint' => $checkpoint, 'heartbeat_at' => now()]);
+        }
+    }
+
     public function error(string $message): void
     {
         if ($this->runId === null) {

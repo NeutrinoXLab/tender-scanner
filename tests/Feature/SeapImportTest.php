@@ -99,7 +99,7 @@ class SeapImportTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->fakeDetails();
         Http::fake([
-            'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response([], 403),
+            'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response([], 400),
             'https://e-licitatie.ro/api-pub/PublicRFQInvitation/GetAll/' => Http::response(['total' => 1, 'items' => [['rfqInvitationId' => 200, 'title' => 'Disponibil']]]),
         ]);
 
@@ -114,7 +114,7 @@ class SeapImportTest extends TestCase
         Http::fake([
             'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response(['total' => 1, 'items' => [['cNoticeID' => 100, 'contractTitle' => 'Disponibil']]]),
             'https://e-licitatie.ro/api-pub/ComboPub/getNoticeGeneralInfo/*' => Http::response(['tedNoticeNumber' => '538493-2026']),
-            'https://e-licitatie.ro/api-pub/NoticeCommon/GetSection1View/*' => Http::response([], 403),
+            'https://e-licitatie.ro/api-pub/NoticeCommon/GetSection1View/*' => Http::response([], 400),
             'https://e-licitatie.ro/api-pub/NoticeCommon/GetSection21View/*' => Http::response(['shortDescription' => 'Descriere']),
             'https://e-licitatie.ro/api-pub/NoticeCommon/GetSection4View/*' => Http::response([]),
         ]);

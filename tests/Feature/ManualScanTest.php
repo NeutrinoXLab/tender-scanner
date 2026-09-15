@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\RunManualScan;
+use App\Models\Notice;
 use App\Models\ScanRun;
 use App\Models\User;
 use App\Services\NoticeIngestor;
@@ -36,7 +37,7 @@ class ManualScanTest extends TestCase
         $this->mock(SeapClient::class, function ($mock) {
             $mock->shouldReceive('getFamilyNotices')->andReturn(['total' => 0, 'items' => []]);
             $mock->shouldReceive('getOpenNotices')->andReturn(['total' => 1, 'items' => [['piNoticeId' => 100, 'title' => 'SEAP']]]);
-            $mock->shouldReceive('getNoticeDetails')->twice()->andReturn([]);
+            $mock->shouldReceive('getNoticeDetails')->once()->andReturn([]);
         });
         $this->mock(TedClient::class, function ($mock) {
             $mock->shouldReceive('search')->twice()->andReturn(['totalNoticeCount' => 1, 'notices' => [[
@@ -98,7 +99,7 @@ class ManualScanTest extends TestCase
 
     private function executeScan(): ScanRun
     {
-        $run = ScanRun::create(['active_key' => 'manual', 'date_from' => '2026-09-01', 'date_to' => '2026-09-10']);
+        $run = ScanRun::create(['before_notice_id' => Notice::max('id') ?? 0, 'active_key' => 'manual', 'date_from' => '2026-09-01', 'date_to' => '2026-09-10']);
         (new RunManualScan($run->id))->handle(app(ScanContext::class));
 
         return $run->fresh();

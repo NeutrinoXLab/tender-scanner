@@ -99,8 +99,8 @@ class SeapClient
 
     private function json(Response $response): array
     {
-        if ($response->status() === 403 && str_contains($response->body(), 'Acces restric')) {
-            throw new SeapAccessRestricted('SEAP a restrictionat adresa IP din cauza traficului automat. Scanarea SEAP a fost oprita; este necesara deblocarea prin suportul SEAP.');
+        if ($response->status() === 403) {
+            throw new SeapAccessRestricted('SEAP a raspuns HTTP 403. Scanarea SEAP a fost oprita imediat. Verificati accesul inainte de reluare.');
         }
         $data = $response->throw()->json();
         if (! is_array($data) || ($data['hasError'] ?? false)) {

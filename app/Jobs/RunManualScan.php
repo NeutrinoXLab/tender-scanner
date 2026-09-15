@@ -2,9 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Models\Notice;
 use App\Models\ScanRun;
 use App\Services\ScanContext;
+use App\Services\SeapClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
@@ -25,21 +25,44 @@ class RunManualScan implements ShouldQueue
     {
         $claimed = ScanRun::whereKey($this->runId)->where('status', 'queued')->update([
             'status' => 'running', 'started_at' => now(), 'heartbeat_at' => now(),
-            'before_notice_id' => Notice::max('id') ?? 0,
         ]);
         if (! $claimed) {
             return;
         }
         $run = ScanRun::findOrFail($this->runId);
         $context->runId = $run->id;
-        $results = [];
+        $previous = $run->results ?? [];
+        $results = $previous;
+        $probe = $run->mode === 'probe';
+        $sample = $run->mode === 'sample';
+        $limited = $probe || $sample;
+        $expected = $probe ? 'probe_ok' : ($sample ? 'sample_ok' : 'completed');
         try {
             foreach (['seap', 'ted'] as $source) {
+                if ($limited && $source === 'ted') {
+                    $results['ted'] = ['status' => 'not_run', 'errors' => []];
+
+                    continue;
+                }
+                if ($source === 'ted' && ($previous['ted']['status'] ?? null) === 'completed') {
+                    $results['ted'] = $previous['ted'];
+
+                    continue;
+                }
                 $context->reset();
                 $results[$source] = ['status' => 'running', 'errors' => []];
                 $run->update(['results' => $results, 'heartbeat_at' => now()]);
                 try {
                     $options = ['--from' => $run->date_from, '--to' => $run->date_to];
+                    if ($source === 'seap') {
+                        $options['--family'] = ['PI', 'CN', 'SCN'];
+                        if ($sample) {
+                            $options['--limit'] = 1;
+                        }
+                        if ($probe) {
+                            $options['--probe'] = true;
+                        }
+                    }
                     if ($source === 'ted') {
                         $options['--max-pages'] = 300;
                     }
@@ -50,7 +73,15 @@ class RunManualScan implements ShouldQueue
                 } catch (Throwable $e) {
                     $context->error($e->getMessage());
                 }
-                $results[$source] = ['status' => $context->errorCount === 0 ? 'completed' : 'error',
+                if ($source === 'seap') {
+                    foreach (array_keys(SeapClient::FAMILIES) as $family) {
+                        $stats = $context->families[$family] ?? null;
+                        if ($stats === null || ($stats['status'] ?? null) !== $expected || (! $limited && ! ($stats['complete'] ?? false))) {
+                            $context->error($family.': familia nu are confirmarea unei execuții complete'.($probe ? ' a testului limitat.' : '.'));
+                        }
+                    }
+                }
+                $results[$source] = ['status' => $context->errorCount === 0 ? $expected : 'error',
                     'error_count' => $context->errorCount, 'errors' => $context->errors];
                 if ($source === 'seap') {
                     $results[$source]['families'] = $context->families;
@@ -58,8 +89,14 @@ class RunManualScan implements ShouldQueue
                 $run->update(['results' => $results, 'heartbeat_at' => now()]);
             }
             $errors = count(array_filter($results, fn ($result) => $result['status'] === 'error'));
-            $run->update(['status' => $errors === 0 ? 'completed' : ($errors === 2 ? 'failed' : 'partial'),
+            $run->update(['results' => $results, 'status' => $errors === 0 ? ($limited ? 'tested' : 'completed') : ($limited || $errors === 2 ? 'failed' : 'partial'),
                 'active_key' => null, 'finished_at' => now(), 'message' => $errors === 0 ? 'Scanarea s-a încheiat.' : 'Scanarea s-a încheiat cu erori. Datele importate au fost păstrate.']);
+            if ($sample) {
+                $run->update(['message' => 'Test real limitat: maximum un anunț per familie, cu detalii și import. TED nu este apelat; catalogul nu a fost sincronizat complet.']);
+            }
+            if ($probe) {
+                $run->update(['message' => 'Test limitat SEAP: maximum o pagină per familie, fără detalii sau import. Nu reprezintă o scanare completă.']);
+            }
         } finally {
             $context->runId = null;
             $context->reset();

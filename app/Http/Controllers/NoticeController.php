@@ -13,6 +13,17 @@ class NoticeController extends Controller
     public function index(): View
     {
         $validated = request()->validate([
+            'search' => ['nullable', 'string', 'max:500'],
+            'county' => ['nullable', 'string', 'max:255'],
+            'cpv' => ['nullable', 'string', 'max:100'],
+            'min_value' => ['nullable', 'numeric', 'min:0'],
+            'max_value' => ['nullable', 'numeric', 'min:0', ...(request()->filled('min_value') ? ['gte:min_value'] : [])],
+            'deadline_from' => ['nullable', 'date_format:Y-m-d'],
+            'deadline_to' => ['nullable', 'date_format:Y-m-d', ...(request()->filled('deadline_from') ? ['after_or_equal:deadline_from'] : [])],
+            'status' => ['nullable', 'string', 'max:255'],
+            'contract_type' => ['nullable', 'string', 'max:255'],
+            'procedure_type' => ['nullable', 'string', 'max:255'],
+            'assignment_type' => ['nullable', 'string', 'max:255'],
             'source' => ['nullable', 'string', 'in:seap,ted'],
             'is_eu_funded' => ['nullable', 'string', 'in:1,0,unknown'],
             'funding_program' => ['nullable', 'string', 'max:255'],

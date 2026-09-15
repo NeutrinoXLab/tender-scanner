@@ -9,7 +9,7 @@ class ScanRun extends Model
 {
     protected $guarded = [];
 
-    protected $casts = ['results' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'heartbeat_at' => 'datetime'];
+    protected $casts = ['checkpoint' => 'array', 'results' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'heartbeat_at' => 'datetime'];
 
     public function counts(?string $source = null): array
     {
@@ -29,8 +29,25 @@ class ScanRun extends Model
         foreach (['seap', 'ted'] as $source) {
             $results[$source] = ($results[$source] ?? ['status' => 'pending', 'errors' => []]) + $this->counts($source);
         }
+        $families = $results['seap']['families'] ?? [];
+        $terminal = ! in_array($this->status, ['queued', 'running'], true);
+        $unverified = false;
+        foreach (['PI', 'CN', 'SCN'] as $family) {
+            if (! isset($families[$family])) {
+                $unverified = $terminal;
+                $families[$family] = ['status' => $terminal ? 'unverified' : 'pending', 'processed' => null,
+                    'reported' => null, 'fetched' => null, 'new' => 0, 'updated' => 0, 'duplicates' => 0,
+                    'errors' => [], 'complete' => false, 'from' => $this->date_from, 'to' => $this->date_to];
+            }
+        }
+        $results['seap']['families'] = $families;
+        if ($unverified && $results['seap']['status'] === 'completed') {
+            $results['seap']['status'] = 'unverified';
+        }
 
-        return ['id' => $this->id, 'status' => $this->status, 'from' => $this->date_from, 'to' => $this->date_to,
+        return ['id' => $this->id, 'status' => $unverified && $this->status === 'completed' ? 'unverified' : $this->status,
+            'can_resume' => $this->mode === 'full' && in_array($this->status, ['partial', 'failed'], true) && ! empty($this->checkpoint),
+            'mode' => $this->mode ?? 'full', 'from' => $this->date_from, 'to' => $this->date_to,
             'started_at' => $this->started_at?->timezone('Europe/Bucharest')->format('d.m.Y H:i:s'),
             'finished_at' => $this->finished_at?->timezone('Europe/Bucharest')->format('d.m.Y H:i:s'),
             'created_at' => $this->created_at?->timezone('Europe/Bucharest')->format('d.m.Y H:i:s'),
