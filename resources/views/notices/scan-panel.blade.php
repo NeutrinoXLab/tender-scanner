@@ -1,7 +1,7 @@
 <section id="manual-scan" class="bg-white border rounded-xl p-5 mb-6" data-status-url="{{ route('scans.latest') }}">
     @php
         $scanSummary = $latestScan?->summary();
-        $scanLabels = ['queued' => 'În așteptare', 'pending' => 'În așteptare', 'running' => 'În curs', 'completed' => 'Finalizată', 'partial' => 'Finalizată parțial', 'failed' => 'Cu erori', 'error' => 'Cu erori', 'not_run' => 'Neexecutată', 'unverified' => 'Acoperire neconfirmată', 'sample_ok' => 'Import limitat reușit', 'probe_ok' => 'API răspunde (test limitat)', 'tested' => 'Test limitat reușit'];
+        $scanLabels = ['cancelled' => 'Anulată', 'queued' => 'În așteptare', 'pending' => 'În așteptare', 'running' => 'În curs', 'completed' => 'Finalizată', 'partial' => 'Finalizată parțial', 'failed' => 'Cu erori', 'error' => 'Cu erori', 'not_run' => 'Neexecutată', 'unverified' => 'Acoperire neconfirmată', 'sample_ok' => 'Import limitat reușit', 'probe_ok' => 'API răspunde (test limitat)', 'tested' => 'Test limitat reușit'];
     @endphp
     <div class="flex flex-wrap justify-between gap-3 items-center">
         <div><h2 class="font-semibold text-gray-900">Actualizare SEAP + TED</h2>

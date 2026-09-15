@@ -9,7 +9,7 @@ if (panel) {
     const status = document.getElementById('manual-scan-status');
     const results = document.getElementById('manual-scan-results');
     const refresh = document.getElementById('manual-scan-refresh');
-    const labels = {queued: 'În așteptare', pending: 'În așteptare', running: 'În curs', completed: 'Finalizată', partial: 'Finalizată parțial', failed: 'Cu erori', error: 'Cu erori', not_run: 'Neexecutată', unverified: 'Acoperire neconfirmată', sample_ok: 'Import limitat reușit', probe_ok: 'API răspunde (test limitat)', tested: 'Test limitat reușit'};
+    const labels = {cancelled: 'Anulată', queued: 'În așteptare', pending: 'În așteptare', running: 'În curs', completed: 'Finalizată', partial: 'Finalizată parțial', failed: 'Cu erori', error: 'Cu erori', not_run: 'Neexecutată', unverified: 'Acoperire neconfirmată', sample_ok: 'Import limitat reușit', probe_ok: 'API răspunde (test limitat)', tested: 'Test limitat reușit'};
     let timer;
     let requestVersion = 0;
     const line = (text, error = false) => {

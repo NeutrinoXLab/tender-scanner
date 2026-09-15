@@ -27,6 +27,15 @@
 
         @include('notices.scan-panel')
 
+        <nav class="flex flex-wrap items-center gap-2 mb-4" aria-label="Filtrare după sursă">
+            <span class="text-sm font-semibold text-gray-700 mr-2">Sursă</span>
+            @foreach (['' => 'Toate', 'seap' => 'SEAP', 'ted' => 'TED'] as $value => $label)
+                <a href="{{ route('notices.index', array_merge(request()->except(['page', 'source']), $value === '' ? [] : ['source' => $value])) }}"
+                   @if (($source ?? '') === $value) aria-current="page" @endif
+                   class="rounded-lg border px-4 py-2 text-sm font-medium {{ ($source ?? '') === $value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50' }}">{{ $label }}</a>
+            @endforeach
+        </nav>
+
         <nav class="flex flex-wrap gap-2 mb-4" aria-label="Organizarea licitațiilor">
             @foreach (['all' => 'Toate', 'saved' => '⭐ Salvate', 'ignored' => '🚫 Ignorate'] as $value => $label)
                 <a href="{{ route('notices.index', array_merge(request()->except(['page', 'collection']), ['collection' => $value])) }}"
@@ -47,6 +56,7 @@
             >
 
                 {{-- Căutare generală --}}
+                @if ($source)<input type="hidden" name="source" value="{{ $source }}">@endif
                 <input type="hidden" name="collection" value="{{ $collection }}">
                 @if ($errors->any())
                     <div role="alert" class="text-sm text-red-700 mb-3">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>
@@ -247,14 +257,6 @@
                             </select>
                         </div>
 
-                        <div>
-                            <label for="source" class="block text-sm font-medium text-gray-700 mb-1">Sursă</label>
-                            <select id="source" name="source" class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                <option value="">Toate sursele</option>
-                                <option value="seap" @selected($source === 'seap')>SEAP</option>
-                                <option value="ted" @selected($source === 'ted')>TED</option>
-                            </select>
-                        </div>
                         {{-- Finanțare UE --}}
                         <div>
                             <label for="is_eu_funded" class="block text-sm font-medium text-gray-700 mb-1">Finanțare UE</label>

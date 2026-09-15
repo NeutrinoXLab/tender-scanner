@@ -123,7 +123,9 @@ Furnizorul comercial extern pentru firme nu este configurat implicit. Funcționa
 
 145 de teste, 847 de assertions, toate trecute. Pint executat și build Vite reușit. Build-ul menționează opțional lipsa `fontaine` pentru optimizarea fonturilor; nu împiedică generarea asseturilor și nu am adăugat dependențe. Toate migrările sunt aplicate local.
 
-La verificarea finală exista run-ul 9, `full`, în așteptare din 12.09.2026, pentru 13.08–12.09.2026. Workerul local a rămas oprit pentru a nu declanșa automat acel import mare. Jobul și datele sunt păstrate. Acest aspect operațional trebuie rezolvat înainte de folosirea butonului: decide dacă se execută scanarea aflată în coadă, apoi pornește workerul conform pașilor de mai sus.
+Scanarea veche 9 (`full`, 13.08–12.09.2026) a fost anulată la cererea utilizatorului pe 15.09.2026, înainte de execuție. Exclusiv jobul ei a fost eliminat din coadă; înregistrarea scanării este păstrată ca „Anulată”, iar anunțurile nu au fost modificate. Coada `tender-scans` era goală după anulare. Workerul a rămas oprit; acel job nu mai poate porni la repornire.
+
+Pagina Licitații oferă „Toate | SEAP | TED”, după câmpul `source` al înregistrării din catalog. Schimbarea sursei păstrează celelalte filtre și revine la prima pagină. O referință TED atașată unui anunț SEAP nu mută acel anunț în lista TED. Importul și legăturile dintre surse nu au fost modificate.
 
 ## Fișierele etapei de stabilizare
 

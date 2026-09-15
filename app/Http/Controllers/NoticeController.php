@@ -96,10 +96,7 @@ class NoticeController extends Controller
                     $query->orWhereDoesntHave('personalEntries', $personalScope);
                 }
             }))
-            ->when($source === 'seap', fn ($query) => $query->where('source', 'seap'))
-            ->when($source === 'ted', fn ($query) => $query->where(function ($query) {
-                $query->whereNotNull('ted_id')->orWhereHas('sources', fn ($sources) => $sources->where('source', 'ted'));
-            }))
+            ->when($source, fn ($query) => $query->where('source', $source))
             ->when($search, function ($query, $search) {
                 $query->where(function ($query) use ($search) {
                     $query->where('title', 'like', "%{$search}%")

@@ -56,7 +56,8 @@ class NoticeIngestionTest extends TestCase
         $this->assertSame($seap->id, $ted->fresh()->canonical_notice_id);
         $this->assertSame(2, $seap->sources()->count());
         $this->get('/notices/'.$ted->id)->assertRedirect(route('notices.show', $seap));
-        $this->get('/notices?source=ted')->assertOk()->assertViewHas('notices', fn ($rows) => $rows->total() === 1);
+        $this->get('/notices?source=ted')->assertOk()->assertViewHas('notices', fn ($rows) => $rows->total() === 0);
+        $this->get('/notices?source=seap')->assertOk()->assertViewHas('notices', fn ($rows) => $rows->total() === 1);
         $this->get('/notices/'.$seap->id)->assertOk()->assertSee('Istoric')->assertSee('Surse și actualizări');
     }
 
