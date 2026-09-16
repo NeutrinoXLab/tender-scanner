@@ -91,18 +91,27 @@ class Notice extends Model
 
     public function scopeSeapOpportunities(Builder $query, bool $includeHistory = false): void
     {
-        $query->where(function (Builder $query) use ($includeHistory): void {
-            $query->where('source', '!=', 'seap')->orWhereNull('seap_metadata')
-                ->orWhere(function (Builder $query) use ($includeHistory): void {
-                    $query->whereIn('seap_metadata->category', ['opportunity', 'planning']);
-                    if (! $includeHistory) {
-                        $query->where(function (Builder $query): void {
-                            $query->whereNull('submission_deadline')->orWhere('submission_deadline', '>=', now('Europe/Bucharest')->format('Y-m-d H:i:s'));
-                        })->where(function (Builder $query): void {
-                            $query->whereNull('status')->orWhereIn('status', ['Publicat', 'In desfasurare', 'În desfășurare']);
-                        });
-                    }
-                });
+        if ($includeHistory) {
+            $query->where(function (Builder $query): void {
+                $query->where('source', '!=', 'seap')->orWhereNull('seap_metadata')->orWhereIn('seap_metadata->category', ['opportunity', 'planning']);
+            });
+
+            return;
+        }
+        $query->where(function (Builder $query): void {
+            $query->where('source', '!=', 'seap')->orWhere(function (Builder $query): void {
+                $query->whereIn('status', ['Publicat', 'In desfasurare', 'În desfășurare'])
+                    ->where(function (Builder $query): void {
+                        $query->whereNull('seap_metadata')->orWhereIn('seap_metadata->category', ['opportunity', 'planning']);
+                    })->where(function (Builder $query): void {
+                        $query->where('submission_deadline', '>=', now('Europe/Bucharest')->format('Y-m-d H:i:s'))
+                            ->orWhere(function (Builder $query): void {
+                                $query->where('seap_metadata->family', 'PI')
+                                    ->whereNull('submission_deadline')
+                                    ->where('seap_metadata->planned_start_date', '>=', now('Europe/Bucharest')->toDateString());
+                            });
+                    });
+            });
         });
     }
 

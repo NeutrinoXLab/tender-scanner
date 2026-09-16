@@ -57,7 +57,7 @@ class TedImportTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $this->withoutVite();
-        Notice::create(['seap_id' => '123', 'title' => 'Carburanți']);
+        Notice::factory()->create(['seap_id' => '123', 'title' => 'Carburanți']);
         $ted = app(TedImporter::class)->import($this->item());
         $this->assertDatabaseCount('notices', 2);
         $this->get('/notices?source=ted&search=Carburan')->assertOk()->assertSee('Vezi anunțul pe TED')

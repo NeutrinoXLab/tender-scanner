@@ -21,7 +21,7 @@ class NoticeFundingFilterTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         foreach ([true, false, null] as $index => $value) {
-            Notice::create(['seap_id' => (string) $index, 'title' => 'Notice '.$index, 'is_eu_funded' => $value]);
+            Notice::factory()->create(['seap_id' => (string) $index, 'title' => 'Notice '.$index, 'is_eu_funded' => $value]);
         }
 
         foreach (['1' => '0', '0' => '1', 'unknown' => '2'] as $filter => $expected) {
@@ -37,18 +37,18 @@ class NoticeFundingFilterTest extends TestCase
         $this->actingAs(User::factory()->create());
         $attributes = [
             'title' => 'Echipamente', 'county' => 'Cluj', 'cpv_code' => '12345',
-            'status' => 'Activ', 'contract_type' => 'Furnizare', 'procedure_type' => 'Deschisa',
+            'status' => 'Publicat', 'contract_type' => 'Furnizare', 'procedure_type' => 'Deschisa',
             'contract_assignment_type' => 'Contract', 'estimated_value' => 150,
             'submission_deadline' => '2026-10-15', 'is_eu_funded' => true,
             'funding_program' => 'Program Regional 2026',
         ];
-        Notice::create(['seap_id' => 'match'] + $attributes);
-        Notice::create(['seap_id' => 'wrong-county', 'county' => 'Iasi'] + $attributes);
-        Notice::create(['seap_id' => 'wrong-program', 'funding_program' => 'Alt program'] + $attributes);
-        Notice::create(['seap_id' => 'wrong-funding', 'is_eu_funded' => false] + $attributes);
+        Notice::factory()->create(['seap_id' => 'match'] + $attributes);
+        Notice::factory()->create(['seap_id' => 'wrong-county', 'county' => 'Iasi'] + $attributes);
+        Notice::factory()->create(['seap_id' => 'wrong-program', 'funding_program' => 'Alt program'] + $attributes);
+        Notice::factory()->create(['seap_id' => 'wrong-funding', 'is_eu_funded' => false] + $attributes);
 
         $this->get('/notices?'.http_build_query([
-            'search' => 'Echipamente', 'county' => 'Cluj', 'cpv' => '123', 'status' => 'Activ',
+            'search' => 'Echipamente', 'county' => 'Cluj', 'cpv' => '123', 'status' => 'Publicat',
             'contract_type' => 'Furnizare', 'procedure_type' => 'Deschisa', 'assignment_type' => 'Contract',
             'min_value' => 100, 'max_value' => 200, 'deadline_from' => '2026-10-01',
             'deadline_to' => '2026-10-31', 'is_eu_funded' => '1', 'funding_program' => 'Regional',
@@ -63,7 +63,7 @@ class NoticeFundingFilterTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         for ($i = 0; $i < 21; $i++) {
-            Notice::create(['seap_id' => (string) $i, 'title' => 'Notice', 'is_eu_funded' => false, 'funding_program' => 'Regional']);
+            Notice::factory()->create(['seap_id' => (string) $i, 'title' => 'Notice', 'is_eu_funded' => false, 'funding_program' => 'Regional']);
         }
         $this->get('/notices?is_eu_funded=0&funding_program=Regional')->assertOk()
             ->assertViewHas('notices', fn ($notices) => $notices->total() === 21
@@ -81,7 +81,7 @@ class NoticeFundingFilterTest extends TestCase
     public function test_funding_input_is_escaped_and_cannot_change_the_query(): void
     {
         $this->actingAs(User::factory()->create());
-        Notice::create(['seap_id' => 'safe', 'title' => 'Notice', 'funding_program' => 'Regional']);
+        Notice::factory()->create(['seap_id' => 'safe', 'title' => 'Notice', 'funding_program' => 'Regional']);
         $input = '<script>alert(1)</script>';
         $this->get('/notices?'.http_build_query(['funding_program' => $input]))
             ->assertSee($input)->assertDontSee($input, false);

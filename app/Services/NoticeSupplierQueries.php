@@ -54,6 +54,7 @@ class NoticeSupplierQueries
             }
         }
         if ($suggestions === [] && $notice->cpv_code) {
+            $add(data_get($notice->seap_metadata, 'cpv_name'), 'Denumire CPV');
             $add($notice->cpv_code, 'CPV');
         }
 

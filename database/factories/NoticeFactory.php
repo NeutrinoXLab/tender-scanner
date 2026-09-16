@@ -10,6 +10,7 @@ class NoticeFactory extends Factory
 {
     public function definition(): array
     {
-        return ['seap_id' => fake()->unique()->uuid(), 'title' => fake()->sentence()];
+        return ['seap_id' => fake()->unique()->uuid(), 'title' => fake()->sentence(),
+            'status' => 'Publicat', 'submission_deadline' => now()->addWeek()];
     }
 }

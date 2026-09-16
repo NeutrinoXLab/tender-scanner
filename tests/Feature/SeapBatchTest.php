@@ -19,6 +19,12 @@ class SeapBatchTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.seap.fetch_procedure_details' => true]);
+    }
+
     private function manual(): ScanRun
     {
         $this->actingAs(User::factory()->create());

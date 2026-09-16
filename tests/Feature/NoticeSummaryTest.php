@@ -15,7 +15,7 @@ class NoticeSummaryTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $this->withoutVite();
-        Notice::create(['seap_id' => 'summary', 'title' => 'Catering', 'description' => 'Pachete alimentare.', 'raw_data' => [
+        Notice::factory()->create(['seap_id' => 'summary', 'title' => 'Catering', 'description' => 'Pachete alimentare.', 'raw_data' => [
             'piNoticeV2' => ['section2' => [['section2_2' => ['lots' => ['items' => [[
                 'descriptionOfProcurement' => 'Maximum 12.654 porții.',
                 'additionalInformation' => 'Depunere în plic sigilat, cu USB.',
@@ -30,7 +30,7 @@ class NoticeSummaryTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $this->withoutVite();
-        Notice::create(['seap_id' => 'empty', 'title' => 'Empty', 'raw_data' => ['piNoticeV2' => ['section2' => 'invalid']]]);
+        Notice::factory()->create(['seap_id' => 'empty', 'title' => 'Empty', 'raw_data' => ['piNoticeV2' => ['section2' => 'invalid']]]);
         $this->get('/notices')->assertOk()->assertSee('Descrierea nu este disponibilă');
     }
 
@@ -39,7 +39,7 @@ class NoticeSummaryTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->withoutVite();
         $description = '<p>Transport</p><p>zilnic</p>';
-        $notice = Notice::create(['seap_id' => 'long', 'title' => 'Long', 'description' => $description, 'raw_data' => [
+        $notice = Notice::factory()->create(['seap_id' => 'long', 'title' => 'Long', 'description' => $description, 'raw_data' => [
             'piNoticeV2' => ['section2' => [['section2_1' => ['description' => $description], 'section2_2' => ['lots' => ['items' => [[
                 'descriptionOfProcurement' => str_repeat('Cerințe. ', 100).'FINAL CERINȚE',
             ]]]]]]],

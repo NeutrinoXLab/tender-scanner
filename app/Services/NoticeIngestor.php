@@ -20,6 +20,16 @@ class NoticeIngestor
         return DB::transaction(function () use ($source, $id, $attributes, $payload, $seapReference): Notice {
             $entry = NoticeSource::where('source', $source)->where('external_id', $id)->first();
             $own = $entry?->notice ?? Notice::where($source === 'seap' ? 'seap_id' : 'ted_id', $id)->first();
+            if ($own === null && $source === 'seap' && ! empty($attributes['notice_number'])) {
+                $candidates = Notice::where('source', 'seap')->whereNull('canonical_notice_id')
+                    ->where('notice_number', $attributes['notice_number'])->where('seap_metadata->family', data_get($attributes, 'seap_metadata.family'))->get();
+                if ($candidates->count() > 1) {
+                    throw new InvalidArgumentException('Număr SEAP ambiguu; sunt necesare verificări înainte de unificare.');
+                }
+                if ($candidates->count() === 1) {
+                    $own = $candidates->first();
+                }
+            }
             $own = $this->canonical($own);
             $cross = null;
             if ($source === 'ted' && $seapReference !== null) {
@@ -56,6 +66,9 @@ class NoticeIngestor
                 $this->merge($notice, $other);
             }
             $normalized = $attributes;
+            if ($source === 'seap' && isset($normalized['seap_metadata'])) {
+                $normalized['seap_metadata'] = array_replace($notice->seap_metadata ?? [], $normalized['seap_metadata']);
+            }
             foreach (['source', 'seap_id', 'ted_id', 'ted_url', 'seap_url', 'raw_data', 'ted_data'] as $key) {
                 unset($normalized[$key]);
             }
@@ -86,6 +99,9 @@ class NoticeIngestor
                 }
             }
             if ($source === 'seap') {
+                if (preg_match('/^(?:CN|SCN)\d+$/', $attributes['notice_number'] ?? '')) {
+                    $notice->seap_official_number = $attributes['notice_number'];
+                }
                 $notice->seap_id = $id;
                 $notice->seap_url = $attributes['seap_url'] ?? 'https://e-licitatie.ro/pub/notices/pi-notice/view/v2/'.$id;
                 if (! isset($payload['piNoticeV2']) && isset($notice->raw_data['piNoticeV2'])) {
@@ -153,7 +169,7 @@ class NoticeIngestor
 
     private function merge(Notice $canonical, Notice $other): void
     {
-        $other->forceFill(['canonical_notice_id' => $canonical->id, 'seap_id' => null, 'ted_id' => null])->save();
+        $other->forceFill(['canonical_notice_id' => $canonical->id, 'seap_id' => null, 'ted_id' => null, 'seap_official_number' => null])->save();
         NoticeSource::where('notice_id', $other->id)->update(['notice_id' => $canonical->id]);
         NoticeRevision::where('notice_id', $other->id)->update(['notice_id' => $canonical->id]);
         Notice::where('canonical_notice_id', $other->id)->update(['canonical_notice_id' => $canonical->id]);

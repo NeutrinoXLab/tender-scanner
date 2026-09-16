@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Notice;
 use App\Services\NoticeSupplierQueries;
+use App\Services\SupplierHistorySearch;
 use App\Services\SupplierSearchProvider;
 use App\Services\SupplierSearchResult;
 use Illuminate\Http\RedirectResponse;
@@ -41,6 +42,8 @@ class NoticeSupplierController extends Controller
             }
         }
 
-        return view('notices.suppliers', compact('notice', 'suggestions', 'term', 'query', 'context', 'result', 'configured'));
+        $history = app(SupplierHistorySearch::class)->search($notice, $query);
+
+        return view('notices.suppliers', compact('notice', 'suggestions', 'term', 'query', 'context', 'result', 'configured', 'history'));
     }
 }

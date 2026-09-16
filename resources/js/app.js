@@ -38,6 +38,7 @@ if (panel) {
                     const stats = result.families?.[family];
                     line(`${family}: ${stats?.processed ?? '—'} verificate · ${labels[stats?.status] || labels.unverified} · ${stats?.fetched ?? '—'} preluate / ${stats?.reported ?? '—'} raportate · ${stats?.new ?? 0} noi · ${stats?.updated ?? 0} actualizate · ${stats?.duplicates ?? 0} duplicate`);
                     if (stats?.batch_attempted !== undefined) line(`${family}: ${stats.batch_attempted} încercate în acest lot.`);
+                    if (stats?.bulk_days) line(`${family}: ${stats.bulk_days} zile acoperite de exportul oficial, fără interogare API.`);
                     if (stats?.refresh_day) line(`${family}: reverificare anunțuri mai vechi din ${stats.refresh_day}.`);
                     for (const error of stats?.errors || []) line(`${family}: ${error}`, true);
                 }

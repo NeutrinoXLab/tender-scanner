@@ -35,7 +35,7 @@ class NoticeIngestionTest extends TestCase
         $this->actingAs(User::factory()->create());
         $service = app(NoticeIngestor::class);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], [], '100');
-        $seap = $service->ingest('seap', '100', ['title' => 'SEAP'], []);
+        $seap = $service->ingest('seap', '100', ['title' => 'SEAP', 'status' => 'Publicat', 'submission_deadline' => now()->addWeek()], []);
         $this->assertSame($ted->id, $seap->id);
         $this->assertDatabaseCount('notice_sources', 2);
         $this->assertSame('SEAP', $seap->title);
@@ -49,7 +49,7 @@ class NoticeIngestionTest extends TestCase
         $this->withoutVite();
         $service = app(NoticeIngestor::class);
         $ted = $service->ingest('ted', '123456-2026', ['title' => 'TED'], []);
-        $seap = $service->ingest('seap', '100', ['title' => 'SEAP'], []);
+        $seap = $service->ingest('seap', '100', ['title' => 'SEAP', 'status' => 'Publicat', 'submission_deadline' => now()->addWeek()], []);
         $service->ingest('ted', '123456-2026', ['title' => 'TED'], [], '100');
         $this->assertSame(1, Notice::whereNull('canonical_notice_id')->count());
         $this->assertDatabaseCount('notices', 2);

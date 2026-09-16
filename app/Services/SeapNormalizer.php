@@ -47,6 +47,7 @@ class SeapNormalizer
         $id = (string) $item[$config['id']];
         $attributes['seap_url'] = 'https://e-licitatie.ro/pub/notices/'.$config['path'].'/'.$id;
         $metadata = [
+            'bulk_only' => false,
             'family' => $family, 'family_id' => $id,
             'notice_id' => $item['noticeId'] ?? $item['noticeID'] ?? $details['noticeId'] ?? null,
             'procedure_id' => $item['procedureId'] ?? null,

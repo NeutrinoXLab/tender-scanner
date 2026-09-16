@@ -185,3 +185,99 @@ Pagina Licitații oferă „Toate | SEAP | TED”, după câmpul `source` al în
 - `tests/Feature/SeapImportTest.php`
 - `tests/Feature/ManualScanFamiliesTest.php`
 - `tests/Feature/SeapStabilizationTest.php`
+
+## Colectare bulk data.gov.ro și istoric furnizori — 16.09.2026
+
+Această secțiune descrie strategia curentă și înlocuiește recomandările anterioare privind preluarea automată a tuturor detaliilor CN/SCN.
+
+### Surse confirmate
+
+Catalog CKAN: `https://data.gov.ro/api/3/action/package_show?id=achizitii-publice-2026`, publicat de Autoritatea pentru Digitalizarea României. Sunt descoperite numai resursele de inițiere și contracte, nu achizițiile directe, atribuirile separate sau modificările de contract.
+
+| Resursă | ID oficial | Format real | Rânduri de date verificate |
+| --- | --- | --- | ---: |
+| Anunțuri de inițiere TI 2026 | 5720192a-dc9a-428f-9ac6-bd055a06da95 | XLSX | 4.934 |
+| Anunțuri de inițiere TII 2026 | 80a3d434-29c7-42eb-8d25-eb1457175101 | ODS | 5.816 |
+| Contracte TI 2026 | f78b2b07-8f7c-4367-9a96-cd7318572f20 | XLSX | 229.089 |
+| Contracte TII 2026 | 2c9237d1-b9c0-4fc3-ad8a-959a7973cc2c | ODS | 190.394 |
+
+Catalogul etichetează resursele TII ca XLSX, însă arhivele conțin ODS. Cititorul identifică structura internă. TI conține 2.418 CN și 2.454 SCN; TII conține 2.727 CN și 3.014 SCN. PC/RFQ/DC sunt omise explicit: acoperirea lor și eligibilitatea pentru participare nu au fost validate în această etapă. Total CN/SCN în cele două exporturi: 10.613 rânduri, înainte de deduplicare.
+
+Exporturile sunt trimestriale, nu un flux curent. Metadatele verificate aveau ultima actualizare la 13.07.2026; nu exista export TIII. Fișierele de inițiere NU au deadline sau ID-ul numeric intern al API-ului. Câmpul JOUE este Da/Nu, nu numărul anunțului TED. Nu îl folosim pentru deduplicare TED.
+
+### Import și reluare
+
+```sh
+php artisan migrate --force --no-interaction
+php artisan seap:bulk-sync --year=2026 --limit=1000 --no-interaction
+```
+
+Migrarea adaugă `seap_bulk_resources`, `supplier_history` și extinde titlul licitației la TEXT (exporturile reale au titluri de peste 400 caractere). Nu șterge anunțuri. Comanda este destinată CLI/cron; nu rulează în requestul web și nu necesită daemon sau Redis. Necesită extensiile PHP ZIP, XMLReader, DOM și spațiu în `storage/app/private` pentru arhive plus indexul text decomprimat.
+
+Fiecare execuție verifică metadatele CKAN și importă cel mult un lot dintr-o resursă, prioritar anunțurile. Fișierul este descărcat o singură dată pentru fiecare versiune, apoi transformat streaming într-un index local. Pregătirea inițială trebuie să termine un fișier; întreruperea ei reconstruiește numai indexul temporar, fără schimbări în date. Pentru contractele TI citirea completă locală a durat aproximativ 32 secunde, cu circa 8 MB memorie; pe shared hosting poate dura mai mult. Downloadul are timeout de 90 secunde. Rulările ulterioare sar direct la poziția salvată în index, fără recitirea rândurilor procesate. Prelucrarea lotului se oprește și după aproximativ 45 secunde.
+
+Checkpoint-ul (rând și poziție în fișier) este salvat în aceeași tranzacție cu datele fiecărui rând. Erorile HTTP/schema/date sunt raportate, păstrând progresul; nu există retry agresiv. Modificarea versiunii oficiale (URL/data modificării/dimensiune/hash publicat) reia fișierul prin upsert. Versiunile vechi și istoricul nu sunt șterse automat. Contorul `processed` reprezintă rânduri parcurse în lot, inclusiv familiile omise, nu numărul de licitații noi. Starea resurselor și ultima eroare se găsesc în `seap_bulk_resources`; finalizările și erorile sunt și în jurnal.
+
+Anunțurile sunt legate după numărul oficial exact CN/SCN, cu familia verificată. ID-ul temporar `BULK:CN...` este înlocuit de ID-ul API când acesta devine disponibil; înregistrarea și datele personale rămân aceleași. Exportul nu suprascrie câmpurile curente ale unei înregistrări deja verificate prin API. Snapshot-ul bulk rămâne în metadata.
+
+### Oportunități și rolul API-ului
+
+Lista principală SEAP cere status compatibil și deadline neexpirat. PI poate apărea cu dată viitoare de inițiere când nu are deadline. Datele necunoscute, atribuirile, anulările și expirările nu sunt prezentate ca oportunități active. Filtrul de istoric, Salvate și Ignorate păstrează accesul la date. TED și separarea Toate / SEAP / TED rămân independente.
+
+`seap:tick` și butonul existent folosesc în continuare limita de lot, checkpoint și oprirea imediată la 403. În mod implicit, CN/SCN folosesc listările pentru starea curentă și termen, fără cele patru cereri suplimentare pentru fiecare anunț. PI păstrează integrarea existentă. Un export finalizat acoperă istoricul trimestrului; zilele fără oportunități bulk de reverificat nu sunt cerute din nou API-ului. O singură zi cu oportunități bulk neconfirmate este adăugată unui nou ciclu incremental. Dacă nu sunt găsite în listare, rămân neconfirmate și ziua poate fi verificată din nou după șapte zile. Nu presupunem că „În desfășurare” dintr-un export vechi înseamnă participare încă posibilă.
+
+Pentru diagnosticul controlat cu detalii există în continuare modul sample; `SEAP_FETCH_PROCEDURE_DETAILS=true` permite explicit vechiul comportament de enrichment în scanare. Implicit este `false`; reactivarea crește numărul cererilor și nu este recomandarea pentru cron. Datele detaliate deja existente sunt păstrate. Actualizarea unei proceduri vechi deja confirmate depinde în continuare de intervalul scanat; sistemul nu promite detectarea instantanee a tuturor anulărilor/modificărilor SEAP.
+
+### Caută furnizori
+
+Pagina existentă afișează separat experiența publică documentată din `supplier_history`, chiar fără sursa comercială configurată. Se caută CPV identic sau aceeași categorie (primele cinci cifre), cu eticheta potrivirii; fără CPV valid se folosesc cuvintele din căutare în denumirea CPV/titlurile procedurilor locale. Se afișează cel mult 20 firme după recență și câte cinci înregistrări contract/lot. Numărul contractelor este distinct, astfel încât loturile nu îl umflă.
+
+Identitatea unei înregistrări combină autoritatea, anunțul de atribuire, lotul, numărul/data/tipul contractului și câștigătorul. CUI este normalizat, iar asocierile de câștigători sunt păstrate separat. Valorile afișate pot fi comune asociaților; nu sunt însumate ca venit al firmei. Linkul duce la exportul oficial și indică rândul, deoarece exportul nu furnizează linkul intern al contractului. Denumirea procedurii este disponibilă numai dacă avem și anunțul în catalog. Nu se generează scor de calitate și nu se modifică integrarea Price Scanner.
+
+### Cron KabyNode
+
+Exemple de configurat după revizuire, cu căile reale și PHP 8.3:
+
+```cron
+*/5 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:bulk-sync --year=2026 --limit=1000 --no-interaction >> storage/logs/seap-bulk-cron.log 2>&1
+*/15 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
+*/5 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan queue:work tender --queue=tender-scans --stop-when-empty --max-jobs=1 --tries=1 --no-interaction >> storage/logs/worker-cron.log 2>&1
+```
+
+Configurează **o singură execuție de worker la un moment dat**, folosind facilitatea de blocare oferită de hosting; nu instala acest cron peste un worker deja administrat. `--max-jobs=1` oprește workerul după job, nu întrerupe jobul în curs. TED poate dura mai mult și nu este limitat de politica SEAP. Lock-ul bulk împiedică două sincronizări bulk simultane. Frecvența de verificare a catalogului poate fi redusă după bootstrap, păstrând reluarea periodică. Nu este necesar `schedule:run` pentru aceste cronuri directe.
+
+Nu au fost executate comenzi de deploy sau cron pe KabyNode în această etapă. Fișierele oficiale au fost verificate local fără import masiv în baza aplicației și fără scanare SEAP live. Migrările și importurile sunt testate în baze temporare.
+
+Fișierele acestei etape (29):
+
+- `.env.example`
+- `README.md`
+- `app/Console/Commands/SyncSeapBulk.php` (nou)
+- `app/Http/Controllers/NoticeSupplierController.php`
+- `app/Models/Notice.php`
+- `app/Services/BulkSpreadsheetReader.php` (nou)
+- `app/Services/SeapBulkSync.php` (nou)
+- `app/Services/SupplierHistorySearch.php` (nou)
+- `app/Services/NoticeIngestor.php`
+- `app/Services/NoticeSupplierQueries.php`
+- `app/Services/ScanDispatcher.php`
+- `app/Services/SeapImporter.php`
+- `app/Services/SeapNormalizer.php`
+- `config/services.php`
+- `database/factories/NoticeFactory.php`
+- `database/migrations/2026_09_16_122312_create_seap_bulk_tables.php` (nou)
+- `resources/js/app.js`
+- `resources/views/notices/index.blade.php`
+- `resources/views/notices/scan-family-results.blade.php`
+- `resources/views/notices/show.blade.php`
+- `resources/views/notices/suppliers.blade.php`
+- `tests/Feature/NoticeFundingFilterTest.php`
+- `tests/Feature/NoticeIngestionTest.php`
+- `tests/Feature/NoticeSummaryTest.php`
+- `tests/Feature/SeapBatchTest.php`
+- `tests/Feature/SeapBulkTest.php` (nou)
+- `tests/Feature/SeapImportTest.php`
+- `tests/Feature/SeapStabilizationTest.php`
+- `tests/Feature/TedImportTest.php`
+
+Migrarea adaugă și `notices.seap_official_number`, unic și completat numai pentru identități CN/SCN neambigue. Protejează inclusiv împotriva inserărilor concurente bulk/API; nu unește automat duplicate istorice ambigue. La rollback titlul rămâne TEXT, pentru a nu trunchia titlurile importate. Pregătirea indexului are o limită proprie de patru minute, sub durata lock-ului bulk.

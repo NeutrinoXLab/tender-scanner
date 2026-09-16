@@ -72,7 +72,7 @@
                 </div>
                 <label class="block text-sm text-gray-700 mb-4">
                     <input type="checkbox" name="seap_history" value="1" @checked(request()->boolean('seap_history'))>
-                    Include și procedurile SEAP cu termen încheiat sau status inactiv
+                    Include istoricul SEAP și procedurile fără termen de participare confirmat
                 </label>
                 <div class="mb-5">
                     <label

@@ -51,8 +51,10 @@ class ScanDispatcher
                 ->orderByDesc('date_to')->get()->first(fn (ScanRun $run): bool => $run->seapComplete());
             $today = CarbonImmutable::now('Europe/Bucharest');
             $from = $lastComplete ? CarbonImmutable::parse($lastComplete->date_to)->min($today)->toDateString() : $today->subDays(30)->toDateString();
+            $verificationDay = $mode === 'full' ? app(SeapBulkSync::class)->verificationDay() : null;
             $run = ScanRun::create(['status' => 'queued', 'active_key' => 'manual', 'mode' => $mode,
                 'date_from' => $options['from'] ?? $from, 'date_to' => $options['to'] ?? $today->toDateString(),
+                'checkpoint' => $verificationDay !== null ? ['_refresh_day' => $verificationDay] : null,
                 'before_notice_id' => Notice::max('id') ?? 0]);
             RunManualScan::dispatch($run->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
 

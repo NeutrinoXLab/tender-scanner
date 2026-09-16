@@ -16,6 +16,12 @@ class SeapImportTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.seap.fetch_procedure_details' => true]);
+    }
+
     private function fakeDetails(): void
     {
         Http::preventStrayRequests();
@@ -167,7 +173,7 @@ class SeapImportTest extends TestCase
         $expired = $service->ingest('seap', 'CN:2', $base + ['title' => 'Expirat', 'submission_deadline' => '2026-09-10'], []);
         $service->ingest('seap', 'CN:3', array_replace($base, ['title' => 'Procedura anulata exemplu', 'status' => 'Anulata', 'submission_deadline' => '2026-10-01']), []);
         $service->ingest('seap', 'CA:4', ['title' => 'Atribuire', 'seap_metadata' => ['category' => 'result']], []);
-        $service->ingest('seap', '5', ['title' => 'Intentie', 'seap_metadata' => ['category' => 'planning']], []);
+        $service->ingest('seap', '5', ['title' => 'Intentie', 'status' => 'Publicat', 'seap_metadata' => ['category' => 'planning', 'family' => 'PI', 'planned_start_date' => '2026-10-01']], []);
         $service->ingest('ted', '123456-2026', ['title' => 'TED existent', 'submission_deadline' => '2026-09-01'], []);
 
         $this->get('/notices')->assertViewHas('notices', fn ($notices) => $notices->total() === 3)

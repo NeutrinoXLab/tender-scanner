@@ -48,6 +48,13 @@
 
             @include('notices.personal-panel')
 
+            @if (data_get($notice->seap_metadata, 'bulk_only'))
+                <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-5 text-sm">Import din exportul trimestrial SEAP. Starea este cea din export; termenul și posibilitatea actuală de participare nu sunt confirmate. Anunțul rămâne în istoric până la verificare.</p>
+            @endif
+            @if (data_get($notice->seap_metadata, 'bulk.url'))
+                <p class="text-sm mb-4"><a class="text-blue-600 hover:underline" href="{{ data_get($notice->seap_metadata, 'bulk.url') }}" target="_blank" rel="noopener noreferrer">Exportul oficial data.gov.ro</a></p>
+            @endif
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 text-sm">
 
                 <div>

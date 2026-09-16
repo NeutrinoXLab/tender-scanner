@@ -6,6 +6,7 @@
             · {{ $stats['new'] ?? 0 }} noi · {{ $stats['updated'] ?? 0 }} actualizate · {{ $stats['duplicates'] ?? 0 }} duplicate
         </p>
         @if (isset($stats['batch_attempted']))<p>{{ $family }}: {{ $stats['batch_attempted'] }} încercate în acest lot.</p>@endif
+        @if ($stats['bulk_days'] ?? 0)<p>{{ $family }}: {{ $stats['bulk_days'] }} zile acoperite de exportul oficial, fără interogare API.</p>@endif
         @if ($stats['refresh_day'] ?? null)<p>{{ $family }}: reverificare anunțuri mai vechi din {{ $stats['refresh_day'] }}.</p>@endif
         @foreach ($stats['errors'] ?? [] as $error)<p class="text-red-700">{{ $family }}: {{ $error }}</p>@endforeach
     @endforeach

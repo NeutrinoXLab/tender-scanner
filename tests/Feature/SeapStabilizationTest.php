@@ -19,6 +19,12 @@ class SeapStabilizationTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.seap.fetch_procedure_details' => true]);
+    }
+
     private function fakeApi(string $title = 'Achizitie', int $total = 1000): void
     {
         Http::preventStrayRequests();

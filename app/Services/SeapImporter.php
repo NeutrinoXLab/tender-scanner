@@ -39,7 +39,7 @@ class SeapImporter
             if (isset($saved['stats'])) {
                 $stats = array_replace($stats, $saved['stats'], ['errors' => [], 'complete' => true, 'status' => 'running']);
             }
-            $refreshDay = ! $probe && $limit === 0 && $context->runId !== null
+            $refreshDay = $family !== 'PI' && ! $probe && $limit === 0 && $context->runId !== null
                 ? (ScanRun::findOrFail($context->runId)->checkpoint['_refresh_day'] ?? null) : null;
             $stats['batch_attempted'] = 0;
             $stats['batch_listing_requests'] = 0;
@@ -75,11 +75,23 @@ class SeapImporter
                     $from ? CarbonImmutable::parse($from, 'Europe/Bucharest')->startOfDay()->toIso8601String() : null,
                     $to ? CarbonImmutable::parse($to, 'Europe/Bucharest')->endOfDay()->toIso8601String() : null,
                 ]] : $this->windows($from, $to);
-                if ($refreshDay !== null) {
+                if ($refreshDay !== null && $family !== 'PI') {
                     $windows = array_merge($windows, $this->windows($refreshDay, $refreshDay));
                 }
                 foreach ($windows as [$start, $end]) {
                     if (in_array($start, $completedWindows, true)) {
+                        continue;
+                    }
+                    if (! $probe && $limit === 0 && $family !== 'PI' && $start !== null
+                        && $pending === []
+                        && ! config('services.seap.fetch_procedure_details', false)
+                        && substr($start, 0, 10) !== $refreshDay
+                        && app(SeapBulkSync::class)->covers(substr($start, 0, 10))) {
+                        $completedWindows[] = $start;
+                        $stats['bulk_days'] = ($stats['bulk_days'] ?? 0) + 1;
+                        $cursor = null;
+                        $save();
+
                         continue;
                     }
                     $windowErrors = count($stats['errors']);
@@ -181,7 +193,7 @@ class SeapImporter
                                         $stats['detail_errors']++;
                                         $this->error($stats, $exception->getMessage());
                                     }
-                                } else {
+                                } elseif ($limit > 0 || config('services.seap.fetch_procedure_details', false)) {
                                     $details = $this->client->getProcedureDetails($family, [$item]);
                                     $payload = $details[$id]['data'] ?? [];
                                     foreach ($details[$id]['errors'] ?? [] as $error) {
@@ -200,7 +212,8 @@ class SeapImporter
                                 }
                                 $externalId = $family === 'PI' ? $id : $family.':'.$id;
                                 $before = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
-                                $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => count($stats['errors']) === $itemErrors]);
+                                $detailsRequested = $family === 'PI' || $limit > 0 || config('services.seap.fetch_procedure_details', false);
+                                $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => $detailsRequested && count($stats['errors']) === $itemErrors]);
                                 $after = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
                                 $recordOutcome($id, $notice->wasRecentlyCreated ? 'new' : ($before !== $after ? 'updated' : 'unchanged'));
                                 if (count($stats['errors']) === $itemErrors) {
@@ -231,6 +244,9 @@ class SeapImporter
                         }
                     } while ($received < $total);
                     if (! $probe && $limit === 0 && count($stats['errors']) === $windowErrors) {
+                        if ($family !== 'PI' && $start !== null) {
+                            app(SeapBulkSync::class)->verifiedDay($family, substr($start, 0, 10));
+                        }
                         $completedWindows[] = $start;
                         $cursor = null;
                         $save();
