@@ -80,7 +80,7 @@ class SeapStabilizationTest extends TestCase
         ScanRun::create(['mode' => 'full', 'status' => 'completed', 'date_from' => '2026-08-03', 'date_to' => '2026-09-10',
             'results' => ['seap' => ['status' => 'completed', 'families' => array_fill_keys(['PI', 'CN', 'SCN'], ['complete' => true])]]]);
         ScanRun::create(['mode' => 'sample', 'status' => 'tested', 'date_from' => '2026-08-03', 'date_to' => '2026-09-12']);
-        $this->postJson('/scans')->assertAccepted()->assertJsonPath('from', '2026-09-07')->assertJsonPath('to', '2026-09-12');
+        $this->postJson('/scans')->assertAccepted()->assertJsonPath('from', '2026-09-10')->assertJsonPath('to', '2026-09-12');
         ScanRun::where('status', 'queued')->delete();
         $this->postJson('/scans', ['from' => '2026-08-03', 'to' => '2026-08-05'])->assertAccepted()
             ->assertJsonPath('from', '2026-08-03')->assertJsonPath('to', '2026-08-05');
@@ -105,7 +105,9 @@ class SeapStabilizationTest extends TestCase
         Http::assertSentCount(4);
         $this->assertSame('partial', $run->status);
         $this->assertSame(1, $run->counts()['new']);
-        $this->assertTrue($run->summary()['can_resume']);
+        $this->assertFalse($run->summary()['can_resume']);
+        $this->travel(61)->minutes();
+        $this->assertTrue($run->fresh()->summary()['can_resume']);
         Http::swap(new Factory);
         Http::preventStrayRequests();
         Http::fake([
@@ -121,7 +123,7 @@ class SeapStabilizationTest extends TestCase
         $this->assertSame(2, $resumed->results['seap']['families']['PI']['processed']);
         $this->assertSame(2, $resumed->results['seap']['families']['PI']['reported']);
         $this->assertSame(0, $resumed->results['seap']['families']['PI']['unprocessed']);
-        Http::assertSentCount(6);
+        Http::assertSentCount(5);
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'getView/1')
             || (str_contains($request->url(), 'PUBLICPINotice/GetAll') && str_starts_with($request['publicationDateFrom'], '2026-09-09')));
     }
@@ -139,7 +141,7 @@ class SeapStabilizationTest extends TestCase
         Http::assertSentCount(11);
     }
 
-    public function test_older_active_publication_days_rotate_and_all_families_receive_the_same_extra_day(): void
+    public function test_new_incremental_cycle_does_not_restart_old_active_history(): void
     {
         $this->actingAs(User::factory()->create());
         $this->travelTo(now()->setDate(2026, 9, 12));
@@ -155,14 +157,15 @@ class SeapStabilizationTest extends TestCase
         $this->mock(TedClient::class, fn ($mock) => $mock->shouldReceive('search')->once()->andReturn(['totalNoticeCount' => 0, 'notices' => []]));
         $run = $this->dispatch([]);
         $this->assertSame('completed', $run->status);
-        $this->assertSame('2026-09-08', $run->date_from);
-        $this->assertSame('2026-08-04', $run->checkpoint['_refresh_day']);
+        $this->assertSame('2026-09-11', $run->date_from);
+        $this->assertArrayNotHasKey('_refresh_day', $run->checkpoint);
         foreach (['PUBLICPINotice', 'PUBLICCNotice', 'PublicRFQInvitation'] as $endpoint) {
             Http::assertSent(fn ($request) => str_contains($request->url(), $endpoint.'/GetAll/')
-                && $request['publicationDateFrom'] === '2026-08-04T00:00:00+03:00'
-                && $request['publicationDateTo'] === '2026-08-04T23:59:59+03:00');
+                && $request['publicationDateFrom'] === '2026-09-11T00:00:00+03:00'
+                && $request['publicationDateTo'] === '2026-09-11T23:59:59+03:00');
         }
-        $this->getJson('/scans/latest')->assertJsonPath('results.seap.families.SCN.refresh_day', '2026-08-04');
+        $this->getJson('/scans/latest')->assertJsonPath('results.seap.families.SCN.refresh_day', null);
+        Http::assertNotSent(fn ($request) => str_starts_with($request['publicationDateFrom'], '2026-08'));
     }
 
     public function test_sample_never_exceeds_limit_even_when_server_ignores_page_size(): void

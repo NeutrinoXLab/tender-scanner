@@ -18,6 +18,11 @@ class SeapImporter
     {
         $report = [];
         $restricted = false;
+        $context = app(ScanContext::class);
+        $batchSize = ! $probe && $limit === 0 && $context->runId !== null
+            ? max(1, (int) config('services.seap.batch_size', 100)) : PHP_INT_MAX;
+        $attempted = 0;
+        $listingRequests = 0;
         foreach ($families as $family) {
             $stats = ['reported' => 0, 'fetched' => 0, 'processed' => 0, 'new' => 0, 'updated' => 0,
                 'unchanged' => 0, 'duplicates' => 0, 'skipped' => 0, 'unprocessed' => 0, 'detail_errors' => 0, 'errors' => [], 'complete' => true,
@@ -29,17 +34,21 @@ class SeapImporter
             $totals = $saved['totals'] ?? [];
             $outcomes = $saved['outcomes'] ?? [];
             $pending = $saved['pending'] ?? [];
+            $cursor = $saved['cursor'] ?? null;
+            $paused = false;
             if (isset($saved['stats'])) {
                 $stats = array_replace($stats, $saved['stats'], ['errors' => [], 'complete' => true, 'status' => 'running']);
             }
             $refreshDay = ! $probe && $limit === 0 && $context->runId !== null
                 ? (ScanRun::findOrFail($context->runId)->checkpoint['_refresh_day'] ?? null) : null;
+            $stats['batch_attempted'] = 0;
+            $stats['batch_listing_requests'] = 0;
             $stats['refresh_day'] = $refreshDay;
             $stats['cached'] ??= 0;
             $stats['resumed'] = count($completedIds);
-            $save = function () use ($context, $family, &$stats, &$completedWindows, &$completedIds, &$totals, &$outcomes, &$pending, $probe, $limit): void {
+            $save = function () use ($context, $family, &$stats, &$completedWindows, &$completedIds, &$totals, &$outcomes, &$pending, &$cursor, $probe, $limit): void {
                 if (! $probe && $limit === 0) {
-                    $context->saveCheckpoint($family, ['windows' => $completedWindows, 'ids' => $completedIds, 'stats' => $stats, 'totals' => $totals, 'outcomes' => $outcomes, 'pending' => $pending]);
+                    $context->saveCheckpoint($family, ['windows' => $completedWindows, 'ids' => $completedIds, 'stats' => $stats, 'totals' => $totals, 'outcomes' => $outcomes, 'pending' => $pending, 'cursor' => $cursor]);
                 }
             };
             $recordOutcome = function (string $id, string $outcome) use (&$stats, &$outcomes, &$pending): void {
@@ -74,24 +83,38 @@ class SeapImporter
                         continue;
                     }
                     $windowErrors = count($stats['errors']);
-                    $page = 0;
-                    $received = 0;
+                    if ($cursor === null || ($cursor['day'] ?? null) !== $start) {
+                        $cursor = ['day' => $start, 'page' => 0, 'received' => 0, 'data' => null];
+                    }
+                    $page = $cursor['page'];
+                    $received = $cursor['received'];
                     do {
-                        $stats['listing_requests']++;
-                        $data = $family === 'PI'
-                            ? $this->client->getOpenNotices($probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, null, $start, $end)
-                            : $this->client->getFamilyNotices($family, $probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, $start, $end);
-                        $total = $data['total'];
-                        if ($page === 0) {
-                            $totals[$start ?? 'all'] = $total;
-                            $stats['reported'] = array_sum($totals);
+                        if ($cursor['data'] === null) {
+                            if ($attempted >= $batchSize || $listingRequests >= $batchSize) {
+                                $paused = true;
+                                break 2;
+                            }
+                            $stats['listing_requests']++;
+                            $stats['batch_listing_requests']++;
+                            $listingRequests++;
+                            $data = $family === 'PI'
+                                ? $this->client->getOpenNotices($probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, null, $start, $end)
+                                : $this->client->getFamilyNotices($family, $probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, $start, $end);
+                            if ($page === 0) {
+                                $totals[$start ?? 'all'] = $data['total'];
+                                $stats['reported'] = array_sum($totals);
+                            }
+                            $data['items'] = $limit > 0 ? array_slice($data['items'], 0, $limit) : $data['items'];
+                            if ($data['items'] === [] && $received < $data['total']) {
+                                throw new RuntimeException('Pagina goala inainte de totalul raportat de SEAP.');
+                            }
+                            $received += count($data['items']);
+                            $stats['fetched'] += count($data['items']);
+                            $cursor = ['day' => $start, 'page' => $page, 'received' => $received, 'data' => $data];
+                            $save();
                         }
-                        $items = $limit > 0 ? array_slice($data['items'], 0, $limit) : $data['items'];
-                        if ($items === [] && $received < $total) {
-                            throw new RuntimeException('Pagina goala inainte de totalul raportat de SEAP.');
-                        }
-                        $received += count($items);
-                        $stats['fetched'] += count($items);
+                        $total = $cursor['data']['total'];
+                        $items = $cursor['data']['items'];
                         if ($probe) {
                             break;
                         }
@@ -126,6 +149,12 @@ class SeapImporter
 
                         foreach ($unique as $item) {
                             $id = (string) $item[SeapClient::FAMILIES[$family]['id']];
+                            if ($attempted >= $batchSize) {
+                                $paused = true;
+                                break 3;
+                            }
+                            $attempted++;
+                            $stats['batch_attempted']++;
                             try {
                                 $externalId = $family === 'PI' ? $id : $family.':'.$id;
                                 $existing = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->first();
@@ -189,7 +218,12 @@ class SeapImporter
                         if ($limit > 0) {
                             break;
                         }
+                        if (count($stats['errors']) > $windowErrors) {
+                            break 2;
+                        }
                         $page++;
+                        $cursor = ['day' => $start, 'page' => $page, 'received' => $received, 'data' => null];
+                        $save();
                         $stats['unprocessed'] = count($pending);
                         $publish($family.' '.($start ?? 'toate datele').' pagina '.$page.' / '.(int) ceil($total / 18).' — procesate '.$stats['processed']);
                         if ($page >= 1000 && $received < $total) {
@@ -198,6 +232,7 @@ class SeapImporter
                     } while ($received < $total);
                     if (! $probe && $limit === 0 && count($stats['errors']) === $windowErrors) {
                         $completedWindows[] = $start;
+                        $cursor = null;
                         $save();
                     }
                 }
@@ -206,10 +241,14 @@ class SeapImporter
                 $restricted = $restricted || $exception instanceof SeapAccessRestricted;
             }
             $stats['unprocessed'] = count($pending);
-            if ($pending !== [] && $stats['complete']) {
+            if ($pending !== [] && $stats['complete'] && ! $paused) {
                 $this->error($stats, 'Exista anunturi din progresul salvat care nu au putut fi reverificate.');
             }
             $stats['status'] = $stats['complete'] ? ($probe ? 'probe_ok' : ($limit > 0 ? 'sample_ok' : 'completed')) : ($stats['listing_requests'] === 0 ? 'not_run' : 'error');
+            if ($paused) {
+                $stats['status'] = 'paused';
+                $stats['complete'] = false;
+            }
             if ($probe || $limit > 0) {
                 $stats['complete'] = false;
             }

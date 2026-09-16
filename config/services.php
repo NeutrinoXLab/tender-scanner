@@ -8,6 +8,8 @@ return [
     ],
 
     'seap' => [
+        'batch_size' => (int) env('SEAP_BATCH_SIZE', 100),
+        'batch_interval_minutes' => (int) env('SEAP_BATCH_INTERVAL_MINUTES', 60),
         'request_delay_ms' => (int) env('SEAP_REQUEST_DELAY_MS', 1000),
     ],
 

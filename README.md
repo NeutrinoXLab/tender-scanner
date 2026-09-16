@@ -20,17 +20,51 @@ PI sunt **achiziții planificate**, nu dovada unei proceduri deja deschise. CN �
 
 Nu importăm atribuiri (`ca-notices`), rezultate sau alte tipuri RFQ decât SCN 17. Alte familii, precum invitații istorice și concursuri de soluții, nu sunt activate fără validarea relevanței și a normalizării. Nu importăm cataloage de produse sau vânzări de bunuri. Referințele TED sunt păstrate în `seap_metadata.ted_references`; noile familii SEAP nu sunt unite automat cu TED.
 
-## Scanare incrementală și reluare
+## Loturi SEAP, checkpoint și incremental
 
-„Scanează acum” → `ScanController` → `RunManualScan` → `seap:scan` / `ted:scan`. SEAP apelează explicit PI, CN și SCN. O familie lipsă împiedică raportarea unei sincronizări complete.
+Fluxul manual și cronul reutilizează același sistem: `ScanDispatcher` → `RunManualScan` → `SeapImporter`, cu `scan_runs`, `scan_run_items` și `scan_runs.checkpoint`. Nu există o a doua bază de progres. Controllerul validează cererea UI și folosește același dispatcher ca noua comandă `seap:tick`.
 
-- Fără date alese, prima scanare acoperă ultimele 30 de zile. Ulterior începe cu 3 zile înainte de data finală a ultimei sincronizări SEAP care confirmă toate familiile. Scanările limitate sau incomplete nu avansează acest reper. O pauză lungă între scanări poate necesita recuperarea unui interval mai mare.
-- Scanarea implicită adaugă o singură zi mai veche cu oportunități încă active, prin rotație: zilele niciodată reverificate, apoi cea reverificată cel mai demult. Aceeași zi este transmisă tuturor familiilor și afișată separat în statistici.
-- O listare identică și detalii complete preluate în ultimele 3 zile permit reutilizarea detaliilor. O listare schimbată sau expirarea perioadei determină recitirea lor. Cache-ul nu se prelungește doar prin recitirea listării.
-- API-ul filtrează după **publicare**, nu după o dată de modificare verificată. Rotația permite reverificarea procedurilor vechi, dar nu garantează detectarea imediată: o rotație completă necesită câte o scanare pentru fiecare zi eligibilă. Un interval explicit permite recuperarea completă a unei perioade istorice.
-- Cererile sunt secvențiale, cu pauză implicită de 1 secundă înainte de trimitere. Conectare: 10 secunde; răspuns: 30 secunde. Maximum 3 încercări pentru timeout, 429 sau 5xx. Orice 403 oprește imediat cererile SEAP rămase, indiferent de textul răspunsului; fără retry sau bypass.
-- `scan_runs.checkpoint` salvează zilele complete, identificatorii și rezultatele după fiecare anunț. „Reia scanarea întreruptă” reia același run eșuat/parțial, cu intervalul original. Zilele complete și detaliile deja procesate sunt sărite. Ziua întreruptă este relistată de la prima pagină pentru a evita omisiunile provocate de deplasarea elementelor între pagini. TED deja finalizat nu este reluat.
-- După 403, verifică/restabilește accesul legitim înainte de reluare. Reluarea unei scanări vechi nu înlocuiește o sincronizare incrementală nouă.
+Problema din producție: importatorul nu avea o limită totală pe execuție și parcurgea toate zilele/paginile. CN/SCN folosesc patru cereri de detalii per anunț; 178 CN înseamnă aproximativ 712 cereri de detalii, plus listări și PI. Un Referer corect permite accesul, dar nu garantează că SEAP nu va aplica ulterior o restricție. Pragul real SEAP nu este cunoscut.
+
+Configurație în `.env`:
+
+```dotenv
+SEAP_BATCH_SIZE=100
+SEAP_BATCH_INTERVAL_MINUTES=60
+SEAP_REQUEST_DELAY_MS=1000
+```
+
+- Limita 100 este politica noastră inițială, **nu o limită confirmată de SEAP**. Poate fi schimbată la 50 sau altă valoare pozitivă. Se aplică totalului PI + CN + SCN, nu fiecărei familii. Numără și anunțurile verificate din cache sau încercate cu eroare. Nu limitează TED.
+- Există și un buget de cereri de listare egal cu mărimea lotului: un interval lung/gol sau plin de duplicate nu poate genera pagini nelimitate într-o execuție. Un anunț CN/SCN poate necesita patru cereri de detalii; 100 de anunțuri nu înseamnă 100 de cereri HTTP. Retry-urile HTTP existente pentru timeout/429/5xx rămân limitate la trei încercări.
+- Checkpoint-ul salvează familia, zilele încheiate, pagina, răspunsul paginii curente, ID-urile procesate și statisticile. Pagina are în continuare 18 elemente, indiferent de mărimea lotului. Elementele rămase sunt procesate din răspunsul salvat înainte de a cere pagina următoare; zilele/familiile complete sunt sărite.
+- Checkpoint-urile vechi, fără cursor de pagină, sunt compatibile: prima reluare relistează doar ziua incompletă și sare ID-urile deja procesate. După aceea folosește cursorul nou. Nu sunt necesare migrări noi peste schema existentă cu `checkpoint`.
+- Oprirea normală la limita lotului este afișată „Lot încheiat — de continuat”, nu „Finalizată”. Statisticile per familie sunt cumulative; „încercate în acest lot” descrie execuția curentă.
+- La orice 403, SEAP se oprește imediat, păstrează datele/checkpoint-ul și nu mai apelează alte familii în acea execuție. Următoarea invocare cron poate continua după pauza configurată, implicit 60 minute. Nu există autorelansare în buclă, proxy sau bypass. Dacă SEAP continuă să restricționeze accesul, opriți cronul și verificați accesul legitim.
+- Un run incomplet este continuat cu **același ID și interval**, până sunt complete PI/CN/SCN. După terminare se creează un nou ciclu: de exemplu, ultima zi completă 15 septembrie + rulare pe 17 septembrie înseamnă intervalul **15–17 septembrie**. Ultima zi verificată este suprapunerea; nu se recitesc 30 de zile. Prima sincronizare fără reper pornește implicit cu 30 de zile.
+- Ciclurile noi nu mai adaugă rotația zilelor istorice. Un checkpoint vechi care are deja o zi suplimentară o păstrează până termină acel ciclu. API-ul filtrează după publicare; suprapunerea nu garantează detectarea imediată a modificărilor unor proceduri publicate mult mai demult. După terminarea ciclului curent se poate cere explicit un interval istoric.
+- Cache-ul existent rămâne: listare identică + detalii complete mai recente de 3 zile evită cererile de detalii. Listările schimbate sau detaliile expirate sunt recitite. Deduplicarea și păstrarea datelor istorice sunt neschimbate; nu există ștergere automată.
+- În UI, TED rulează primul, fără limita SEAP. TED deja finalizat în acel run nu este repetat la reluare. `seap:tick` apelează numai SEAP; importul TED existent poate fi rulat independent cu `ted:scan`, fără a aștepta recuperarea istoricului SEAP. Loturile SEAP nu planifică automat alte importuri TED.
+- Dispatcherul serializează pornirile UI/cron și reutilizează run-ul activ; un cron suprapus nu adaugă un job identic. Un interval manual diferit nu înlocuiește un checkpoint incomplet. Scanările anulate nu sunt reluate.
+
+### Cron KabyNode
+
+Comanda de planificare, din rădăcina aplicației:
+
+```sh
+php artisan seap:tick --no-interaction
+```
+
+Aceasta **pune în coadă cel mult un lot**, nu îl execută în procesul cron. Necesită workerul `tender`, descris mai jos. Exemplu cron (înlocuiți calea proiectului și binarul PHP cu cele reale de pe hosting):
+
+```cron
+*/15 * * * * cd /CALE/ABSOLUTA/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
+```
+
+Cronul verifică la 15 minute, dar **nu pornește un nou lot înainte de cele 60 minute de pauză** și nu dublează un run activ. Astfel continuarea are loc la prima verificare după pauză. Pentru alt ritm schimbați `SEAP_BATCH_INTERVAL_MINUTES`; evitați frecvențele agresive. Nu este necesară o intrare Laravel Scheduler în plus față de acest cron direct.
+
+Nu programați în cron `seap:scan` fără limite: aceea rămâne comanda internă/diagnostică de import, iar apelul CLI direct nu are contextul persistent al unui `ScanRun`. Pentru recuperare periodică folosiți `seap:tick`; pentru testul diagnostic mic există opțiunile de mai jos. Nu rulați simultan importuri SEAP diagnostice și workerul de loturi.
+
+După modificarea configurației sau actualizarea codului, administratorul trebuie să refacă cache-ul de configurație și să restarteze workerul, conform secțiunii Deployment. Aceste operațiuni și cronul nu au fost executate în producție în această etapă.
 
 Butonul „Testează PI/CN/SCN fără import” face câte o cerere de listare fără detalii. Test real limitat din CLI (nu apelează TED):
 
@@ -87,7 +121,7 @@ stdout_logfile=/var/www/seap-scanner/storage/logs/worker.log
 
 După modificarea configurației: `supervisorctl reread`, `supervisorctl update`, `supervisorctl restart seap-scanner`. În Windows folosește un serviciu/task administrat, cu directorul de lucru al proiectului și restart automat. Timeout-ul global al workerului necesită PCNTL, indisponibil în Windows; timeouts HTTP rămân active. Un proces lansat manual este potrivit pentru dezvoltare, nu asigură repornirea după reboot.
 
-Nu există taskuri programate în `routes/console.php`; `php artisan schedule:list` confirmă. **Nu este necesar cron/scheduler pentru v1**. Nu adăuga implicit scanări SEAP periodice.
+Nu există taskuri programate în `routes/console.php`. Pentru noua procesare periodică SEAP se configurează cronul direct `seap:tick` de mai sus; nu se configurează în paralel și o programare Laravel pentru aceeași comandă.
 
 Un proces omorât fără rularea hook-ului de eșec poate lăsa scanarea „În curs”. Confirmă întâi că procesul vechi nu mai rulează. După `retry_after`, un worker cu `--tries=1` marchează jobul rezervat eșuat și eliberează scanarea pentru reluarea din UI. Nu forța `queue:retry` pentru un run activ. Păstrează în backup inclusiv `scan_runs`, `scan_run_items`, `notice_sources` și datele personale.
 
@@ -101,7 +135,7 @@ php vendor/bin/pint --dirty --format agent
 npm run build
 ```
 
-Testele folosesc baze în memorie și HTTP simulat. Acoperă familiile, normalizarea, paginarea, deduplicarea, actualizările, erorile HTTP, timeout/retry, limitele, orchestrarea, reluarea și rotația. Verifică separat accesul privat, rolurile, dezactivarea utilizatorilor, CSRF, noindex/nofollow, izolarea notițelor/statusurilor/colecțiilor și filtrele esențiale. Nu a fost schimbată arhitectura autentificării.
+Testele folosesc baze în memorie și HTTP simulat. Acoperă familiile, normalizarea, paginarea, deduplicarea, actualizările, erorile HTTP, timeout/retry, limitele, orchestrarea, loturile, reluarea după 403 și tranziția incrementală. Verifică separat accesul privat, rolurile, dezactivarea utilizatorilor, CSRF, noindex/nofollow, izolarea notițelor/statusurilor/colecțiilor și filtrele esențiale. Nu a fost schimbată arhitectura autentificării.
 
 ## Rezultatul testului live din 12.09.2026
 

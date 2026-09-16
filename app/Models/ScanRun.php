@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
@@ -10,6 +11,19 @@ class ScanRun extends Model
     protected $guarded = [];
 
     protected $casts = ['checkpoint' => 'array', 'results' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'heartbeat_at' => 'datetime'];
+
+    public function seapComplete(): bool
+    {
+        return data_get($this->results, 'seap.status') === 'completed'
+            && collect(['PI', 'CN', 'SCN'])->every(fn (string $family): bool => (bool) data_get($this->results, "seap.families.$family.complete", false));
+    }
+
+    public function batchAvailable(): bool
+    {
+        $after = $this->checkpoint['_next_batch_at'] ?? null;
+
+        return $after === null || CarbonImmutable::parse($after)->lte(now());
+    }
 
     public function counts(?string $source = null): array
     {
@@ -46,7 +60,8 @@ class ScanRun extends Model
         }
 
         return ['id' => $this->id, 'status' => $unverified && $this->status === 'completed' ? 'unverified' : $this->status,
-            'can_resume' => $this->mode === 'full' && in_array($this->status, ['partial', 'failed'], true) && ! empty($this->checkpoint),
+            'can_resume' => $this->mode === 'full' && in_array($this->status, ['paused', 'partial', 'failed'], true) && ! empty($this->checkpoint) && $this->batchAvailable(),
+            'resume_after' => $this->batchAvailable() ? null : ($this->checkpoint['_next_batch_at'] ?? null),
             'mode' => $this->mode ?? 'full', 'from' => $this->date_from, 'to' => $this->date_to,
             'started_at' => $this->started_at?->timezone('Europe/Bucharest')->format('d.m.Y H:i:s'),
             'finished_at' => $this->finished_at?->timezone('Europe/Bucharest')->format('d.m.Y H:i:s'),

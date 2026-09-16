@@ -9,7 +9,7 @@ if (panel) {
     const status = document.getElementById('manual-scan-status');
     const results = document.getElementById('manual-scan-results');
     const refresh = document.getElementById('manual-scan-refresh');
-    const labels = {cancelled: 'Anulată', queued: 'În așteptare', pending: 'În așteptare', running: 'În curs', completed: 'Finalizată', partial: 'Finalizată parțial', failed: 'Cu erori', error: 'Cu erori', not_run: 'Neexecutată', unverified: 'Acoperire neconfirmată', sample_ok: 'Import limitat reușit', probe_ok: 'API răspunde (test limitat)', tested: 'Test limitat reușit'};
+    const labels = {paused: 'Lot încheiat — de continuat',cancelled: 'Anulată', queued: 'În așteptare', pending: 'În așteptare', running: 'În curs', completed: 'Finalizată', partial: 'Finalizată parțial', failed: 'Cu erori', error: 'Cu erori', not_run: 'Neexecutată', unverified: 'Acoperire neconfirmată', sample_ok: 'Import limitat reușit', probe_ok: 'API răspunde (test limitat)', tested: 'Test limitat reușit'};
     let timer;
     let requestVersion = 0;
     const line = (text, error = false) => {
@@ -37,6 +37,7 @@ if (panel) {
                 for (const family of ['PI', 'CN', 'SCN']) {
                     const stats = result.families?.[family];
                     line(`${family}: ${stats?.processed ?? '—'} verificate · ${labels[stats?.status] || labels.unverified} · ${stats?.fetched ?? '—'} preluate / ${stats?.reported ?? '—'} raportate · ${stats?.new ?? 0} noi · ${stats?.updated ?? 0} actualizate · ${stats?.duplicates ?? 0} duplicate`);
+                    if (stats?.batch_attempted !== undefined) line(`${family}: ${stats.batch_attempted} încercate în acest lot.`);
                     if (stats?.refresh_day) line(`${family}: reverificare anunțuri mai vechi din ${stats.refresh_day}.`);
                     for (const error of stats?.errors || []) line(`${family}: ${error}`, true);
                 }
@@ -48,6 +49,7 @@ if (panel) {
             if (result.error_count) line(`Erori ${source.toUpperCase()}: ${result.error_count}`, true);
             for (const error of result.errors || []) line(error, true);
         }
+        if (scan.resume_after) line(`Următorul lot SEAP este permis după ${new Date(scan.resume_after).toLocaleString('ro-RO', {timeZone: 'Europe/Bucharest'})}.`);
         if (scan.message) line(scan.message);
         if (scan.waiting) line('Scanarea așteaptă procesul de fundal. Dacă starea persistă, procesul de scanare trebuie repornit.', true);
         refresh.hidden = active;

@@ -19,7 +19,7 @@ class RunManualScan implements ShouldQueue
 
     public int $timeout = 21600;
 
-    public function __construct(public int $runId) {}
+    public function __construct(public int $runId, public bool $seapOnly = false) {}
 
     public function handle(ScanContext $context): void
     {
@@ -38,9 +38,9 @@ class RunManualScan implements ShouldQueue
         $limited = $probe || $sample;
         $expected = $probe ? 'probe_ok' : ($sample ? 'sample_ok' : 'completed');
         try {
-            foreach (['seap', 'ted'] as $source) {
-                if ($limited && $source === 'ted') {
-                    $results['ted'] = ['status' => 'not_run', 'errors' => []];
+            foreach (['ted', 'seap'] as $source) {
+                if (($limited || ($this->seapOnly ?? false)) && $source === 'ted') {
+                    $results['ted'] = $previous['ted'] ?? ['status' => 'not_run', 'errors' => []];
 
                     continue;
                 }
@@ -76,7 +76,8 @@ class RunManualScan implements ShouldQueue
                 if ($source === 'seap') {
                     foreach (array_keys(SeapClient::FAMILIES) as $family) {
                         $stats = $context->families[$family] ?? null;
-                        if ($stats === null || ($stats['status'] ?? null) !== $expected || (! $limited && ! ($stats['complete'] ?? false))) {
+                        $waitingForBatch = ! $limited && ($stats['status'] ?? null) === 'paused';
+                        if (! $waitingForBatch && ($stats === null || ($stats['status'] ?? null) !== $expected || (! $limited && ! ($stats['complete'] ?? false)))) {
                             $context->error($family.': familia nu are confirmarea unei execuții complete'.($probe ? ' a testului limitat.' : '.'));
                         }
                     }
@@ -84,19 +85,34 @@ class RunManualScan implements ShouldQueue
                 $results[$source] = ['status' => $context->errorCount === 0 ? $expected : 'error',
                     'error_count' => $context->errorCount, 'errors' => $context->errors];
                 if ($source === 'seap') {
+                    if ($context->errorCount === 0 && collect($context->families)->contains('status', 'paused')) {
+                        $results[$source]['status'] = 'paused';
+                    }
                     $results[$source]['families'] = $context->families;
                 }
                 $run->update(['results' => $results, 'heartbeat_at' => now()]);
             }
             $errors = count(array_filter($results, fn ($result) => $result['status'] === 'error'));
-            $run->update(['results' => $results, 'status' => $errors === 0 ? ($limited ? 'tested' : 'completed') : ($limited || $errors === 2 ? 'failed' : 'partial'),
-                'active_key' => null, 'finished_at' => now(), 'message' => $errors === 0 ? 'Scanarea s-a încheiat.' : 'Scanarea s-a încheiat cu erori. Datele importate au fost păstrate.']);
+            $status = $errors === 0 ? ($limited ? 'tested' : 'completed') : ($limited || $errors === 2 ? 'failed' : 'partial');
+            $message = $errors === 0 ? 'Scanarea s-a încheiat.' : 'Scanarea s-a încheiat cu erori. Datele importate au fost păstrate.';
+            $run->refresh();
+            $checkpoint = $run->checkpoint ?? [];
+            if (! $limited) {
+                $checkpoint['_next_batch_at'] = now()->addMinutes(max(1, (int) config('services.seap.batch_interval_minutes', 60)))->toIso8601String();
+                if (($results['seap']['status'] ?? null) === 'paused' && $errors === 0) {
+                    $status = 'paused';
+                    $message = 'Lot SEAP încheiat. Sincronizarea continuă de la checkpoint la următoarea rulare programată.';
+                }
+            }
             if ($sample) {
-                $run->update(['message' => 'Test real limitat: maximum un anunț per familie, cu detalii și import. TED nu este apelat; catalogul nu a fost sincronizat complet.']);
+                $message = 'Test real limitat: maximum un anunț per familie, cu detalii și import. TED nu este apelat; catalogul nu a fost sincronizat complet.';
             }
             if ($probe) {
-                $run->update(['message' => 'Test limitat SEAP: maximum o pagină per familie, fără detalii sau import. Nu reprezintă o scanare completă.']);
+                $message = 'Test limitat SEAP: maximum o pagină per familie, fără detalii sau import. Nu reprezintă o scanare completă.';
             }
+            $run->update(['results' => $results, 'checkpoint' => $checkpoint, 'status' => $status,
+                'active_key' => null, 'finished_at' => now(), 'message' => $message]);
+
         } finally {
             $context->runId = null;
             $context->reset();

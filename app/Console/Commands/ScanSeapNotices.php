@@ -64,6 +64,6 @@ class ScanSeapNotices extends Command
 
         return $this->option('probe') || (int) $this->option('limit') > 0
             ? (count(array_filter($report, fn ($stats) => ! in_array($stats['status'], ['probe_ok', 'sample_ok'], true))) > 0 ? self::FAILURE : self::SUCCESS)
-            : (in_array(false, array_column($report, 'complete'), true) ? self::FAILURE : self::SUCCESS);
+            : (count(array_filter($report, fn (array $stats): bool => ! in_array($stats['status'], ['completed', 'paused'], true))) > 0 ? self::FAILURE : self::SUCCESS);
     }
 }
