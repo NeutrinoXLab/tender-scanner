@@ -192,7 +192,7 @@ Această secțiune descrie strategia curentă și înlocuiește recomandările a
 
 ### Surse confirmate
 
-Catalog CKAN: `https://data.gov.ro/api/3/action/package_show?id=achizitii-publice-2026`, publicat de Autoritatea pentru Digitalizarea României. Sunt descoperite numai resursele de inițiere și contracte, nu achizițiile directe, atribuirile separate sau modificările de contract.
+Catalog CKAN: `https://data.gov.ro/api/3/action/package_show?id=achizitii-publice-2026`, publicat de Autoritatea pentru Digitalizarea României. Inițial au fost integrate resursele de inițiere și contracte. Extensia DA/DAN de mai jos adaugă achizițiile directe și notificările lor exclusiv ca istoric; atribuirile separate de proceduri și modificările de contract rămân neimportate.
 
 | Resursă | ID oficial | Format real | Rânduri de date verificate |
 | --- | --- | --- | ---: |
@@ -281,3 +281,91 @@ Fișierele acestei etape (29):
 - `tests/Feature/TedImportTest.php`
 
 Migrarea adaugă și `notices.seap_official_number`, unic și completat numai pentru identități CN/SCN neambigue. Protejează inclusiv împotriva inserărilor concurente bulk/API; nu unește automat duplicate istorice ambigue. La rollback titlul rămâne TEXT, pentru a nu trunchia titlurile importate. Pregătirea indexului are o limită proprie de patru minute, sub durata lock-ului bulk.
+
+## Achiziții directe DA/DAN și limita integrării ADV — 16.09.2026
+
+**ADV active nu sunt încă importate.** La audit, accesarea publică `https://e-licitatie.ro/pub` a primit pagina oficială „Accesul de la adresa dumneavoastră IP a fost restricționat”, care menționează volumul de trafic automat. Cererile către SEAP au fost oprite. Nu s-a confirmat un endpoint JSON ADV, schema răspunsului, enumerația stărilor sau câmpul deadline. Nu s-au inventat endpointuri și nu s-au încercat proxy-uri, alte identități sau alte metode de ocolire. Pentru finalizarea ADV este necesar acces oficial permis și verificarea listării/detaliilor reale, inclusiv termenul exact și referințele documentelor. Această etapă livrează partea verificabilă DA/DAN, nu un import ADV pretins funcțional.
+
+### Exporturi oficiale verificate
+
+Toate sunt din [datasetul ADR Achiziții publice 2026](https://data.gov.ro/dataset/achizitii-publice-2026), descoperite prin API-ul CKAN existent. Au fost citite integral, fără import în baza locală a aplicației:
+
+| Resursă | ID oficial și legătură | Format real | Rânduri de date |
+| --- | --- | --- | ---: |
+| Achiziții directe TI | [5bcff70e-a97d-494d-a028-ac031b431dae](https://data.gov.ro/dataset/e8d22de4-f8ce-4b42-8561-98d2481ddef9/resource/5bcff70e-a97d-494d-a028-ac031b431dae) | XLSX | 476.597 |
+| Achiziții directe TII | [5ea63810-6fbd-489c-aa41-0b0852a2902e](https://data.gov.ro/dataset/e8d22de4-f8ce-4b42-8561-98d2481ddef9/resource/5ea63810-6fbd-489c-aa41-0b0852a2902e) | ODS | 588.644 |
+| Notificări de atribuire directă TI | [728c1bb4-c417-40b7-a4fa-e52a94281ee6](https://data.gov.ro/dataset/e8d22de4-f8ce-4b42-8561-98d2481ddef9/resource/728c1bb4-c417-40b7-a4fa-e52a94281ee6) | XLSX | 72.140 |
+| Notificări de atribuire directă TII | [510c84d6-e240-4782-a003-aa6e5e132e27](https://data.gov.ro/dataset/e8d22de4-f8ce-4b42-8561-98d2481ddef9/resource/510c84d6-e240-4782-a003-aa6e5e132e27) | ODS | 75.273 |
+
+Total: 1.212.654 rânduri înainte de deduplicare. Toate numerele au prefixul real DA sau DAN, niciunul ADV. Memoria maximă PHP la citirea integrală a fost aproximativ 8 MB; cel mai lent fișier a durat aproximativ 66 s local. Aceasta verifică cititorul, nu reprezintă un benchmark al importului SQL pe KabyNode. TII este etichetat XLSX în catalog, dar arhiva este ODS. Fișierele descărcate au aproximativ 60 MB / 103 MB pentru DA și 9 MB / 12 MB pentru DAN; indexurile locale și fișierele temporare necesită spațiu suplimentar pe disc.
+
+| Informație | DA / achiziții directe | DAN / notificări |
+| --- | --- | --- |
+| Identitate | `Numar achizitie directa`, DA… | `Numar notificare`, DAN… |
+| Obiect | `Denumire achizitie` | `Obiectul achizitiei` |
+| Cumpărător și furnizor | Autoritate, CUI autoritate, ofertant câștigător, CUI câștigător | Aceleași câmpuri |
+| Clasificare | Cod CPV, denumire CPV, tip contract | Aceleași câmpuri |
+| Date | Data publicare, Data finalizare, inclusiv ora | Aceleași câmpuri |
+| Valoare | `Valoare achizitie (RON)` | Același câmp |
+| Fonduri UE | Indicator și denumire program | Indicator și tip proiect/program |
+| Termen ofertare, stare curentă, valoare estimată, cantitate structurată, județ/localitate, documente, legătură ADV | Nu există coloane dedicate | Nu există coloane dedicate |
+
+Datele DA reprezintă achiziții, iar DAN notificări de atribuire, cu furnizor și valoare raportată. Data finalizării **nu** este deadline. Nu inferăm cantitatea din titlu și nu echivalăm valoarea achiziției cu o valoare estimată. Moneda este RON conform antetului, nu este dedusă din alt câmp. Valorile sunt păstrate la două zecimale, iar rândul original integral rămâne în `payload`. Datele XLSX seriale și datele ISO ODS sunt normalizate fără pierderea orei, în timpul local furnizat de export, fără inventarea unui fus orar absent din sursă.
+
+### Integrare și identitate
+
+`seap:bulk-sync` descoperă acum și familiile de resurse `direct_purchases` și `direct_awards`. Folosește același cititor streaming, lock, registru de resurse, versiune, index local și checkpoint de rând/octet. Nu există un al doilea sistem de scanare. Niciun rând DA/DAN nu ajunge în `notices`, nici prin filtrul de istoric al licitațiilor. Nu se modifică `RunManualScan`, PI/CN/SCN, TED sau datele personale.
+
+Identitatea pentru istoric este numărul oficial complet DA/DAN, independent de titlu, valoare, trimestru și furnizor. Corectarea furnizorului sau valorii actualizează același rând. CUI furnizor este normalizat; în lipsa sa se folosește cheia existentă bazată pe nume. DA și DAN rămân distincte: exporturile nu oferă o legătură sigură între ele sau cu ADV, deci nu sunt reunite prin asemănare. Numărul contractului nu este inventat; coloanele vechi fără corespondent rămân goale.
+
+Singurul rând găsit fără dată de finalizare este DA40195337, rândul 74755 din DA TII. Acesta este omis din istoricul finalizat. Checkpoint-ul avansează, iar registrul păstrează `skipped_rows` și `last_skipped_row`, cu avertizare în log. Rezultatul comenzii include `skipped`, cumulativ pentru versiunea resursei; `processed` reprezintă rândurile parcurse în apel, inclusiv cele omise. Schimbarea versiunii resetează checkpoint-ul și contoarele și permite reanalizarea rândului. Identificatorii invalizi, antetele lipsă sau valorile numerice invalide opresc resursa cu eroare, păstrând ultimul rând valid și toate datele importate. Nu sunt înghițite erorile de format sau de bază de date.
+
+HTTP 403/429 la catalog/descărcare oprește apelul fără retry în aceeași rulare; reluarea folosește cronul existent. O versiune nouă reface indexul și execută upsert, fără ștergerea istoricului absent din noul fișier. Importul rămâne limitat la numărul configurat de rânduri și bugetul de procesare existent de 45 s; descărcarea și pregătirea inițială au separat limitele existente de 90 s, respectiv patru minute. Shared hostingul trebuie să permită această pregătire în PHP CLI; nu presupunem că timpul local se reproduce pe server.
+
+### Migrare, afișare și operare
+
+Migrarea `2026_09_16_155700_extend_supplier_history_for_direct_purchases.php` adaugă:
+
+- `supplier_history.history_type` (implicit `contracts`, păstrează rândurile vechi), `official_number` unic și nullable, `title`, `published_at`, `completed_at`;
+- `seap_bulk_resources.skipped_rows`, `last_skipped_row`.
+
+Nu modifică schema `Notice`, autentificarea sau tabelele personale. Migrarea nu a fost aplicată bazei locale reale sau producției; testele folosesc SQLite temporar în memorie.
+
+În pagina Licitații, filtrul minim „Tip SEAP” distinge ADV / PI / CN / SCN după metadata existentă și se combină cu filtrele personale și de căutare. La alegerea TED, linkul elimină filtrul de familie SEAP. Interfața precizează că ADV active nu sunt încă importate. Testele cu înregistrări ADV sintetice verifică exclusiv filtrul și regula existentă de vizibilitate: stări inactive, deadline necunoscut sau expirat nu apar ca active; înregistrările rămân accesibile în istoric/Salvate. Aceste teste **nu** validează o integrare ADV live.
+
+Istoricul DA/DAN este căutat în pagina existentă de furnizori după CPV identic/categorie de cinci cifre, iar căutarea fără CPV folosește și titlul achiziției. Tipul fiecărei înregistrări și numărul oficial sunt afișate explicit, cu referință la export și rând. Numărătoarea reprezintă înregistrări documentate distincte, nu calitate, venit sau un număr garantat de tranzacții economice unice între DA/DAN. Nu există o legătură de identitate ADV–istoric; o viitoare oportunitate ADV cu CPV poate folosi căutarea generică existentă. Nu este implementat calculul atribuit/estimat: aceste exporturi nu furnizează valoarea estimată necesară unei perechi comparabile.
+
+După revizuire, sunt suficiente migrarea și cronul bulk existente, fără servicii sau worker nou:
+
+```sh
+php artisan migrate --force --no-interaction
+php artisan seap:bulk-sync --year=2026 --limit=1000 --no-interaction
+```
+
+```cron
+*/5 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:bulk-sync --year=2026 --limit=1000 --no-interaction >> storage/logs/seap-bulk-cron.log 2>&1
+```
+
+Înlocuiește cronul bulk existent dacă este deja configurat; nu îl dubla. Cronurile `seap:tick` și worker/TED rămân cele documentate anterior. Nu există comandă sau cron ADV activ funcțional în această etapă. Nu s-a modificat KabyNode, nu s-a pornit o scanare SEAP suplimentară și nu s-a făcut commit/push/deployment.
+
+### Verificări și fișierele acestei extensii
+
+187 teste / 1.177 aserțiuni au trecut în suita completă. Testele adăugate acoperă DA și DAN, upsert inclusiv corectarea furnizorului, neatingerea Notice/datelor personale, conversia datelor XLSX, checkpoint fără redescărcare, versiuni noi, rânduri/antete invalide, omisiuni fără dată de finalizare, oprire 403/429, căutarea și escaparea istoricului, filtrarea familiilor și excluderea ADV sintetice inactive. Testarea importului ADV live, a documentelor și a normalizării răspunsului său rămâne blocată de lipsa unei surse verificate. Pint, build Vite și `git diff --check` au trecut; build-ul semnalează doar dependența opțională `fontaine` absentă, fără eșec.
+
+Fișiere modificate (8):
+
+- `README.md`
+- `app/Console/Commands/SyncSeapBulk.php`
+- `app/Http/Controllers/NoticeController.php`
+- `app/Services/SeapBulkSync.php`
+- `app/Services/SupplierHistorySearch.php`
+- `resources/views/notices/index.blade.php`
+- `resources/views/notices/suppliers.blade.php`
+- `tests/Feature/NoticeSourceFilterTest.php`
+
+Fișiere noi (2):
+
+- `database/migrations/2026_09_16_155700_extend_supplier_history_for_direct_purchases.php`
+- `tests/Feature/DirectPurchaseHistoryTest.php`
+
+Stare la raportare: `master`, ahead 1 față de `origin/master` din commitul anterior `1e8d615`, opt fișiere modificate și două noi, nimic staged. Exporturile descărcate și fișierele generate sunt ignorate de Git. Mesaj propus pentru partea implementată: `Add official direct purchase history and SEAP family filtering`. Nu folosi un mesaj care ar sugera că importul ADV active este deja funcțional.

@@ -10,7 +10,7 @@ class SyncSeapBulk extends Command
 {
     protected $signature = 'seap:bulk-sync {--year=2026} {--limit=1000 : Maximum rows in this invocation}';
 
-    protected $description = 'Synchronize one resumable batch from official data.gov.ro initiation notices or contracts';
+    protected $description = 'Synchronize one resumable batch of official notices, contracts or direct purchase history from data.gov.ro';
 
     public function handle(SeapBulkSync $sync): int
     {

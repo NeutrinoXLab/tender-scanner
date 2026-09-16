@@ -25,6 +25,7 @@ class NoticeController extends Controller
             'procedure_type' => ['nullable', 'string', 'max:255'],
             'assignment_type' => ['nullable', 'string', 'max:255'],
             'source' => ['nullable', 'string', 'in:seap,ted'],
+            'family' => ['nullable', 'string', 'in:ADV,PI,CN,SCN'],
             'is_eu_funded' => ['nullable', 'string', 'in:1,0,unknown'],
             'funding_program' => ['nullable', 'string', 'max:255'],
             'seap_history' => ['nullable', 'boolean'],
@@ -97,6 +98,7 @@ class NoticeController extends Controller
                 }
             }))
             ->when($source, fn ($query) => $query->where('source', $source))
+            ->when($validated['family'] ?? null, fn ($query, $family) => $query->where('source', 'seap')->where('seap_metadata->family', $family))
             ->when($search, function ($query, $search) {
                 $query->where(function ($query) use ($search) {
                     $query->where('title', 'like', "%{$search}%")

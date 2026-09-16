@@ -49,17 +49,17 @@
         </section>
         <section class="bg-white rounded-lg border p-5 mb-6" aria-label="Experiență publică documentată">
             <h2 class="text-lg font-semibold">Experiență publică documentată — SEAP</h2>
-            <p class="text-sm text-gray-600 my-3">Contracte din exporturile oficiale. Numărul contractelor indică experiență documentată, nu un scor de calitate. Potrivirea pe categorie CPV trebuie verificată pentru produsul dorit. Valorile pot reprezenta contracte comune mai multor câștigători.</p>
+            <p class="text-sm text-gray-600 my-3">Contracte, achiziții directe și notificări din exporturile oficiale. Numărul înregistrărilor indică experiență documentată, nu un scor de calitate. Potrivirea pe categorie CPV trebuie verificată pentru produsul dorit. Valorile pot reprezenta contracte comune mai multor câștigători. Nu presupunem că o achiziție DA și o notificare DAN reprezintă tranzacții diferite dacă sursa nu oferă legătura dintre ele.</p>
             @forelse ($history as $supplier)
                 <article class="border rounded-lg p-4 my-3">
                     <h3 class="font-semibold">{{ $supplier['name'] }} · CUI {{ $supplier['cui'] ?? 'necunoscut' }}</h3>
-                    <p>{{ $supplier['count'] }} contracte relevante · Cel mai recent: {{ $supplier['latest'] ?? 'dată necunoscută' }}</p>
-                    <p class="text-sm text-gray-500">Sunt afișate maximum 5 înregistrări recente de contract / lot.</p>
+                    <p>{{ $supplier['count'] }} înregistrări relevante · Cel mai recent: {{ $supplier['latest'] ?? 'dată necunoscută' }}</p>
+                    <p class="text-sm text-gray-500">Sunt afișate maximum 5 înregistrări recente de contract / lot / achiziție directă.</p>
                     @foreach ($supplier['contracts'] as $contract)
                         <div class="mt-3 text-sm">
                             <p>{{ $contract['match'] }} · {{ $contract['cpv'] }} · {{ $contract['cpv_name'] }}</p>
                             <p>{{ $contract['title'] ?? 'Denumirea procedurii nu este disponibilă în exportul de contracte.' }}</p>
-                            <p>{{ $contract['notice'] }} · {{ $contract['award'] }} · Contract {{ $contract['number'] }} / {{ $contract['date'] }} · {{ $contract['value'] ?? '—' }} {{ $contract['currency'] }}</p>
+                            <p>{{ $contract['notice'] }} · {{ $contract['award'] }} · {{ $contract['type'] }} {{ $contract['number'] }} / {{ $contract['date'] }} · {{ $contract['value'] ?? '—' }} {{ $contract['currency'] }}</p>
                             <a class="text-blue-600 hover:underline" href="{{ $contract['url'] }}" target="_blank" rel="noopener noreferrer">Export oficial · rând {{ $contract['row'] }}</a>
                         </div>
                     @endforeach

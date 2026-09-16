@@ -17,7 +17,7 @@ class SeapBulkSync
 {
     public function __construct(private BulkSpreadsheetReader $reader, private NoticeIngestor $ingestor) {}
 
-    /** @return array{status: string, processed: int, resource: ?string} */
+    /** @return array{status: string, processed: int, resource: ?string, skipped: int} */
     public function sync(int $year, int $limit = 1000): array
     {
         return Cache::lock('seap-bulk-sync', 600)->block(1, function () use ($year, $limit): array {
@@ -27,7 +27,13 @@ class SeapBulkSync
             }
             foreach ($response['result']['resources'] as $resource) {
                 $name = Str::ascii($resource['name'] ?? '');
-                $kind = preg_match('/^Anunturi de (?:initiere|intiere) publicate T/i', $name) ? 'notices' : (preg_match('/^Contracte T/i', $name) ? 'contracts' : null);
+                $kind = match (true) {
+                    (bool) preg_match('/^Anunturi de (?:initiere|intiere) publicate T/i', $name) => 'notices',
+                    (bool) preg_match('/^Contracte T/i', $name) => 'contracts',
+                    (bool) preg_match('/^Achizitii directe T/i', $name) => 'direct_purchases',
+                    (bool) preg_match('/^Notificari de atribuire la cumpararea directa T/i', $name) => 'direct_awards',
+                    default => null,
+                };
                 if ($kind === null) {
                     continue;
                 }
@@ -39,13 +45,14 @@ class SeapBulkSync
                     DB::table('seap_bulk_resources')->updateOrInsert(['resource_id' => $resource['id']], [
                         'kind' => $kind, 'name' => $name, 'url' => $url, 'version' => $version,
                         'file_hash' => null, 'row_offset' => 0, 'byte_offset' => 0, 'status' => 'pending', 'error' => null,
-                        'completed_at' => null, 'created_at' => $existing?->created_at ?? now(), 'updated_at' => now(),
+                        'completed_at' => null, 'skipped_rows' => 0, 'last_skipped_row' => null,
+                        'created_at' => $existing?->created_at ?? now(), 'updated_at' => now(),
                     ]);
                 }
             }
             $resource = DB::table('seap_bulk_resources')->where('name', 'like', '%'.$year)->where('status', '!=', 'completed')->orderByDesc('kind')->orderBy('id')->first();
             if (! $resource) {
-                return ['status' => 'completed', 'processed' => 0, 'resource' => null];
+                return ['status' => 'completed', 'processed' => 0, 'resource' => null, 'skipped' => 0];
             }
             try {
                 $directory = storage_path('app/private/seap-bulk');
@@ -74,9 +81,17 @@ class SeapBulkSync
                 foreach ($this->preparedRows($path, (int) $resource->row_offset, (int) $resource->byte_offset) as [$index, $row, $byteOffset]) {
                     if ($index === 0) {
                         $header = array_map(fn (string $value): string => trim(Str::ascii($value)), $row);
-                        $required = $resource->kind === 'notices'
-                            ? ['Numar anunt initiere', 'Stare procedura', 'Denumire procedura', 'Data publicare', 'Cod CPV', 'Autoritate contractanta', 'Valoare estimata procedura (RON)']
-                            : ['Numar anunt atribuire', 'Numar contract', 'Ofertant castigator', 'CUI ofertant castigator', 'Data contract', 'Cod CPV', 'CUI autoritate contractanta', 'Numar lot', 'Valoare contract (RON)'];
+                        $required = match ($resource->kind) {
+                            'notices' => ['Numar anunt initiere', 'Stare procedura', 'Denumire procedura', 'Data publicare', 'Cod CPV', 'Autoritate contractanta', 'Valoare estimata procedura (RON)'],
+                            'contracts' => ['Numar anunt atribuire', 'Numar contract', 'Ofertant castigator', 'CUI ofertant castigator', 'Data contract', 'Cod CPV', 'CUI autoritate contractanta', 'Numar lot', 'Valoare contract (RON)'],
+                            'direct_purchases', 'direct_awards' => [
+                                $resource->kind === 'direct_purchases' ? 'Numar achizitie directa' : 'Numar notificare',
+                                $resource->kind === 'direct_purchases' ? 'Denumire achizitie' : 'Obiectul achizitiei',
+                                'Autoritate contractanta', 'CUI autoritate contractanta', 'Data publicare', 'Data finalizare',
+                                'Cod CPV', 'Ofertant castigator', 'CUI ofertant castigator', 'Valoare achizitie (RON)',
+                            ],
+                            default => throw new RuntimeException('Tip de export nesuportat.'),
+                        };
                         foreach ($required as $column) {
                             if (! in_array($column, $header, true)) {
                                 throw new RuntimeException('Coloană obligatorie lipsă: '.$column);
@@ -89,7 +104,8 @@ class SeapBulkSync
                         continue;
                     }
                     if ($processed >= max(1, $limit) || microtime(true) - $started >= 45) {
-                        return ['status' => 'paused', 'processed' => $processed, 'resource' => $resource->name];
+                        return ['status' => 'paused', 'processed' => $processed, 'resource' => $resource->name,
+                            'skipped' => (int) DB::table('seap_bulk_resources')->where('id', $resource->id)->value('skipped_rows')];
                     }
                     $data = [];
                     foreach ($header as $position => $column) {
@@ -99,6 +115,13 @@ class SeapBulkSync
                     DB::transaction(function () use ($resource, $data, $index, $byteOffset): void {
                         if ($resource->kind === 'notices') {
                             $this->notice($data, $resource->resource_id, $resource->url);
+                        } elseif (in_array($resource->kind, ['direct_purchases', 'direct_awards'], true)) {
+                            if (! $this->directPurchase($data, $resource->kind, $resource->resource_id, $resource->url, $index + 1)) {
+                                DB::table('seap_bulk_resources')->where('id', $resource->id)->update([
+                                    'skipped_rows' => DB::raw('skipped_rows + 1'), 'last_skipped_row' => $index + 1,
+                                ]);
+                                Log::warning('Direct purchase without completion date skipped', ['resource' => $resource->resource_id, 'row' => $index + 1]);
+                            }
                         } else {
                             $this->contract($data, $resource->resource_id, $resource->url, $index + 1);
                         }
@@ -109,7 +132,8 @@ class SeapBulkSync
                 DB::table('seap_bulk_resources')->where('id', $resource->id)->update(['status' => 'completed', 'completed_at' => now(), 'updated_at' => now()]);
                 Log::info('SEAP bulk resource completed', ['resource' => $resource->resource_id, 'processed' => $processed]);
 
-                return ['status' => 'completed', 'processed' => $processed, 'resource' => $resource->name];
+                return ['status' => 'completed', 'processed' => $processed, 'resource' => $resource->name,
+                    'skipped' => (int) DB::table('seap_bulk_resources')->where('id', $resource->id)->value('skipped_rows')];
             } catch (Throwable $exception) {
                 DB::table('seap_bulk_resources')->where('id', $resource->id)->update(['status' => 'error', 'error' => mb_substr($exception->getMessage(), 0, 2000), 'updated_at' => now()]);
                 Log::error('SEAP bulk sync stopped', ['resource' => $resource->resource_id, 'error' => $exception->getMessage()]);
@@ -211,6 +235,48 @@ class SeapBulkSync
             'resource_id' => $resourceId, 'resource_row' => $line, 'resource_url' => $url,
             'payload' => json_encode($row, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), 'updated_at' => now()];
         DB::table('supplier_history')->upsert([['identity' => $key, 'created_at' => now()] + $values], ['identity'], array_keys($values));
+    }
+
+    /** @param array<string, string> $row */
+    public function directPurchase(array $row, string $kind, string $resourceId, string $url, int $line): bool
+    {
+        $prefix = match ($kind) {
+            'direct_purchases' => 'DA',
+            'direct_awards' => 'DAN',
+            default => throw new RuntimeException('Tip de achiziție directă nesuportat.'),
+        };
+        $number = strtoupper(trim($row[$prefix === 'DA' ? 'Numar achizitie directa' : 'Numar notificare'] ?? ''));
+        $supplier = trim($row['Ofertant castigator'] ?? '');
+        $title = trim($row[$prefix === 'DA' ? 'Denumire achizitie' : 'Obiectul achizitiei'] ?? '');
+        if (! preg_match('/^'.$prefix.'\d+$/', $number) || $supplier === '' || $title === '') {
+            throw new RuntimeException('Achiziție directă incompletă sau identificator invalid la rândul '.$line);
+        }
+        if (trim($row['Data finalizare'] ?? '') === '') {
+            return false;
+        }
+        $cui = strtoupper(preg_replace('/\s+/u', '', $row['CUI ofertant castigator'] ?? ''));
+        $cui = preg_replace('/^RO(?=\d+$)/', '', $cui);
+        if (in_array($cui, ['-', '0', 'N/A', 'NULL'], true)) {
+            $cui = '';
+        }
+        $completed = $this->date($row['Data finalizare']);
+        $key = hash('sha256', 'direct:'.$number);
+        $values = [
+            'history_type' => $kind, 'official_number' => $number, 'title' => $title,
+            'published_at' => $this->date($row['Data publicare'] ?? ''), 'completed_at' => $completed,
+            'contract_key' => $key, 'supplier_key' => $cui !== '' ? 'cui:'.$cui : 'name:'.hash('sha256', mb_strtolower($supplier)),
+            'supplier_name' => $supplier, 'supplier_cui' => $cui ?: null,
+            'authority_name' => $row['Autoritate contractanta'] ?? '', 'authority_cui' => $row['CUI autoritate contractanta'] ?? null,
+            'notice_number' => '', 'award_number' => $prefix === 'DAN' ? $number : '', 'contract_number' => '',
+            'contract_date' => substr($completed, 0, 10), 'contract_kind' => $row['Tip contract'] ?? null,
+            'cpv_code' => $row['Cod CPV'] ?? '', 'cpv_name' => $row['Denumire CPV'] ?? null,
+            'value' => $this->decimal($row['Valoare achizitie (RON)'] ?? ''), 'currency' => 'RON',
+            'resource_id' => $resourceId, 'resource_row' => $line, 'resource_url' => $url,
+            'payload' => json_encode($row, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), 'updated_at' => now(),
+        ];
+        DB::table('supplier_history')->upsert([['identity' => $key, 'created_at' => now()] + $values], ['identity'], array_keys($values));
+
+        return true;
     }
 
     public function date(string $value): ?string

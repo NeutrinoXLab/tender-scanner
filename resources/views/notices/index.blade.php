@@ -30,7 +30,7 @@
         <nav class="flex flex-wrap items-center gap-2 mb-4" aria-label="Filtrare după sursă">
             <span class="text-sm font-semibold text-gray-700 mr-2">Sursă</span>
             @foreach (['' => 'Toate', 'seap' => 'SEAP', 'ted' => 'TED'] as $value => $label)
-                <a href="{{ route('notices.index', array_merge(request()->except(['page', 'source']), $value === '' ? [] : ['source' => $value])) }}"
+                <a href="{{ route('notices.index', array_merge(request()->except($value === 'ted' ? ['page', 'source', 'family'] : ['page', 'source']), $value === '' ? [] : ['source' => $value])) }}"
                    @if (($source ?? '') === $value) aria-current="page" @endif
                    class="rounded-lg border px-4 py-2 text-sm font-medium {{ ($source ?? '') === $value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50' }}">{{ $label }}</a>
             @endforeach
@@ -58,6 +58,18 @@
                 {{-- Căutare generală --}}
                 @if ($source)<input type="hidden" name="source" value="{{ $source }}">@endif
                 <input type="hidden" name="collection" value="{{ $collection }}">
+                @if ($source !== 'ted')
+                    <div class="mb-4">
+                        <label for="family-filter" class="block text-sm font-medium text-gray-700 mb-1">Tip SEAP</label>
+                        <select name="family" id="family-filter" class="w-full sm:max-w-xs border border-gray-300 bg-white p-2 rounded-lg">
+                            <option value="">Toate tipurile</option>
+                            @foreach (['ADV', 'PI', 'CN', 'SCN'] as $family)
+                                <option value="{{ $family }}" @selected(request('family') === $family)>{{ $family }}</option>
+                            @endforeach
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Importul ADV active nu este încă disponibil; exporturile DA/DAN sunt doar istoric de achiziții.</p>
+                    </div>
+                @endif
                 @if ($errors->any())
                     <div role="alert" class="text-sm text-red-700 mb-3">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>
                 @endif
@@ -364,7 +376,7 @@
 
                     @if (
                         $collection !== 'all' || $personalStatus || request()->boolean('seap_history') ||
-                        $source ||
+                        $source || request('family') ||
                         $euFunded !== null ||
                         $fundingProgram ||
                         $search ||

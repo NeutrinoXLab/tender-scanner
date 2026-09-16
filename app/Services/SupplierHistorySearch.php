@@ -24,7 +24,7 @@ class SupplierHistorySearch
                 foreach ($tokens as $token) {
                     $term = '%'.str_replace(['%', '_'], '', $token).'%';
                     $query->where(function ($query) use ($term): void {
-                        $query->where('cpv_name', 'like', $term)->orWhereExists(function ($notices) use ($term): void {
+                        $query->where('cpv_name', 'like', $term)->orWhere('title', 'like', $term)->orWhereExists(function ($notices) use ($term): void {
                             $notices->selectRaw('1')->from('notices')->where('source', 'seap')
                                 ->whereColumn('notices.notice_number', 'supplier_history.notice_number')->where('title', 'like', $term);
                         });
@@ -40,11 +40,16 @@ class SupplierHistorySearch
             $first = $contracts->first();
             $result[] = ['name' => $first->supplier_name, 'cui' => $first->supplier_cui, 'count' => (int) $group->contract_count,
                 'latest' => $group->latest_contract, 'contracts' => $contracts->map(function ($contract) use ($cpv): array {
-                    $title = Notice::where('source', 'seap')->where('notice_number', $contract->notice_number)->value('title');
+                    $title = $contract->title ?? ($contract->notice_number !== '' ? Notice::where('source', 'seap')->where('notice_number', $contract->notice_number)->value('title') : null);
 
-                    return ['number' => $contract->contract_number, 'date' => $contract->contract_date,
+                    return ['number' => $contract->official_number ?? $contract->contract_number, 'date' => $contract->contract_date,
+                        'type' => match ($contract->history_type) {
+                            'direct_purchases' => 'Achiziție directă',
+                            'direct_awards' => 'Notificare de atribuire directă',
+                            default => 'Contract',
+                        },
                         'cpv' => $contract->cpv_code, 'cpv_name' => $contract->cpv_name,
-                        'match' => $cpv === null ? 'Cuvinte-cheie CPV' : (Str::startsWith($contract->cpv_code, $cpv) ? 'CPV identic' : 'Aceeași categorie CPV (5 cifre)'),
+                        'match' => $cpv === null ? 'Cuvinte-cheie CPV / obiect' : (Str::startsWith($contract->cpv_code, $cpv) ? 'CPV identic' : 'Aceeași categorie CPV (5 cifre)'),
                         'title' => $title, 'notice' => $contract->notice_number, 'award' => $contract->award_number,
                         'value' => $contract->value, 'currency' => $contract->currency,
                         'url' => $contract->resource_url, 'row' => $contract->resource_row];
