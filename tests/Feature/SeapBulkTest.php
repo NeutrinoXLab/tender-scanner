@@ -291,13 +291,14 @@ class SeapBulkTest extends TestCase
         $this->travel(61)->minutes();
         Http::swap(new Factory);
         Http::preventStrayRequests();
-        Http::fake(['*PUBLICCNotice/GetAll/' => Http::response(['total' => 0, 'items' => []]),
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
+            '*PUBLICCNotice/GetAll/' => Http::response(['total' => 0, 'items' => []]),
             '*PublicRFQInvitation/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
         app(ScanDispatcher::class)->dispatch([], true);
         (new RunManualScan($run->id, true))->handle(app(ScanContext::class));
         $this->assertSame('completed', $run->fresh()->status);
         $this->assertSame('not_run', $run->fresh()->results['ted']['status']);
-        Http::assertSentCount(2);
+        Http::assertSentCount(3);
     }
 
     public function test_invalid_row_preserves_previous_row_and_checkpoint_without_reimporting_it(): void
@@ -370,7 +371,8 @@ class SeapBulkTest extends TestCase
         $originalId = Notice::sole()->id;
         Queue::fake();
         Http::preventStrayRequests();
-        Http::fake(['*PUBLICPINotice/GetAll/' => Http::response(['total' => 0, 'items' => []]),
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
+            '*PUBLICPINotice/GetAll/' => Http::response(['total' => 0, 'items' => []]),
             '*PublicRFQInvitation/GetAll/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICCNotice/GetAll/' => function ($request) {
                 $items = str_starts_with($request['publicationDateFrom'], '2026-04-01') ? [[
@@ -388,6 +390,6 @@ class SeapBulkTest extends TestCase
         $this->assertSame($originalId, Notice::seapOpportunities()->sole()->id);
         $this->assertSame('CN:42', Notice::sole()->seap_id);
         $this->assertCount(2, $run->fresh()->checkpoint['CN']['windows']);
-        Http::assertSentCount(5);
+        Http::assertSentCount(6);
     }
 }

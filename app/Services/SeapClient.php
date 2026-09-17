@@ -18,6 +18,7 @@ class SeapClient
         'PI' => ['api' => 'PUBLICPINotice', 'id' => 'piNoticeId', 'type' => 1, 'path' => 'pi-notice/view/v2'],
         'CN' => ['api' => 'PUBLICCNotice', 'id' => 'cNoticeID', 'type' => 2, 'path' => 'c-notice/v2/view'],
         'SCN' => ['api' => 'PublicRFQInvitation', 'id' => 'rfqInvitationId', 'type' => 17, 'path' => 'simplified-notice/v2/view'],
+        'ADV' => ['api' => 'AdvNoticeCommon', 'id' => 'advNoticeId', 'type' => null, 'path' => 'adv-notices/view'],
     ];
 
     private string $baseUrl = 'https://e-licitatie.ro/api-pub';
@@ -32,13 +33,22 @@ class SeapClient
         $config = self::FAMILIES[$family] ?? throw new InvalidArgumentException('Familie SEAP nesuportata.');
         $payload = ['pageIndex' => $pageIndex, 'pageSize' => $pageSize, 'sortProperties' => [],
             'publicationDateFrom' => $from, 'publicationDateTo' => $to];
+        if ($family === 'ADV') {
+            $payload = ['pageIndex' => $pageIndex, 'pageSize' => $pageSize,
+                'publicationDateStart' => $from, 'publicationDateEnd' => $to];
+        }
         if ($family === 'SCN') {
             $payload['sysNoticeType'] = ['id' => 17];
         }
         if ($cpv !== null) {
             $payload['cpv'] = $cpv;
         }
-        $data = $this->json($this->request()->post($this->baseUrl.'/'.$config['api'].'/GetAll/', $payload));
+        $method = $family === 'ADV' ? 'GetAdvNoticeList' : 'GetAll';
+        $request = $this->request();
+        if ($family === 'ADV') {
+            $request->withHeaders(['Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/']);
+        }
+        $data = $this->json($request->post($this->baseUrl.'/'.$config['api'].'/'.$method.'/', $payload));
         if (! isset($data['total'], $data['items']) || ! is_int($data['total']) || $data['total'] < 0 || ! is_array($data['items']) || ! array_is_list($data['items'])) {
             throw new RuntimeException('Raspuns de listare SEAP invalid.');
         }
@@ -52,6 +62,17 @@ class SeapClient
     public function getNoticeDetails(int $piNoticeId): array
     {
         return $this->json($this->request()->get($this->baseUrl.'/PUBLICPINotice/getView/'.$piNoticeId));
+    }
+
+    public function getAdvNoticeDetails(int $id): array
+    {
+        $data = $this->json($this->request()->withHeaders(['Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/'])
+            ->get($this->baseUrl.'/PUBLICAdvNotice/getForView/'.$id));
+        if (($data['advertisingNoticeId'] ?? null) !== $id || ! preg_match('/^ADV\d+$/', $data['noticeNo'] ?? '')) {
+            throw new RuntimeException('Detaliu ADV invalid sau pentru alt identificator.');
+        }
+
+        return $data;
     }
 
     /** @return array<string, array{data: array, errors: array<string>}> */
@@ -91,7 +112,7 @@ class SeapClient
             })
             ->retry(3, 500, function (Throwable $exception): bool {
                 return $exception instanceof ConnectionException || ($exception instanceof RequestException
-                    && ($exception->response->status() === 429 || $exception->response->serverError()));
+                    && $exception->response->serverError());
             }, throw: false)
             ->withHeaders(['Referer' => 'https://e-licitatie.ro/', 'Origin' => 'https://e-licitatie.ro',
                 'Accept' => 'application/json, text/plain, */*']);
@@ -99,8 +120,8 @@ class SeapClient
 
     private function json(Response $response): array
     {
-        if ($response->status() === 403) {
-            throw new SeapAccessRestricted('SEAP a raspuns HTTP 403. Scanarea SEAP a fost oprita imediat. Verificati accesul inainte de reluare.');
+        if (in_array($response->status(), [403, 429], true)) {
+            throw new SeapAccessRestricted('SEAP a raspuns HTTP '.$response->status().'. Scanarea SEAP a fost oprita imediat. Verificati accesul inainte de reluare.');
         }
         $data = $response->throw()->json();
         if (! is_array($data) || ($data['hasError'] ?? false)) {

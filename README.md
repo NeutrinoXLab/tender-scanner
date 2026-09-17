@@ -11,8 +11,9 @@ API JSON public, bază `https://e-licitatie.ro/api-pub/`; fără scraping HTML:
 | PI, intenție de achiziție | `PUBLICPINotice/GetAll/` | `piNoticeId`, tip 1 |
 | CN, participare | `PUBLICCNotice/GetAll/` | `cNoticeID`, tip 2 |
 | SCN, participare simplificată | `PublicRFQInvitation/GetAll/` | `rfqInvitationId`, filtru `sysNoticeType: {id: 17}` |
+| ADV, publicitate | `AdvNoticeCommon/GetAdvNoticeList/` | `advNoticeId`, `noticeNo`; date `publicationDateStart` / `publicationDateEnd`, pagini de 100 |
 
-Listările primesc `pageIndex`, `pageSize`, `publicationDateFrom`, `publicationDateTo`. Importul normal folosește zile întregi în Europe/Bucharest și pagini de 18. PI: detalii GET `PUBLICPINotice/getView/{id}`. CN/SCN: GET `ComboPub/getNoticeGeneralInfo/`, `NoticeCommon/GetSection1View/`, `NoticeCommon/GetSection21View/`, `NoticeCommon/GetSection4View/`, cu identificatorul și tipul familiei. Detaliile sunt cerute secvențial, pentru fiecare anunț.
+Listările PI/CN/SCN primesc `pageIndex`, `pageSize`, `publicationDateFrom`, `publicationDateTo`. Importul normal folosește zile întregi în Europe/Bucharest și pagini de 18. PI: detalii GET `PUBLICPINotice/getView/{id}`. CN/SCN: GET `ComboPub/getNoticeGeneralInfo/`, `NoticeCommon/GetSection1View/`, `NoticeCommon/GetSection21View/`, `NoticeCommon/GetSection4View/`, cu identificatorul și tipul familiei. Detaliile sunt cerute secvențial, pentru fiecare anunț.
 
 Criteriul de relevanță folosește familia structurată și `sysAcquisitionContractType.id`: 1 = furnizare, 2 = servicii, 3 = lucrări. Tipurile explicite incompatibile sunt omise și raportate ca eroare, fără ștergerea datelor existente. Absența unui câmp opțional nu dovedește că anunțul este irelevant. Metadatele păstrează familia, tipul, procedura, starea, caracterul sectorial și legislația când sunt furnizate.
 
@@ -34,13 +35,13 @@ SEAP_BATCH_INTERVAL_MINUTES=60
 SEAP_REQUEST_DELAY_MS=1000
 ```
 
-- Limita 100 este politica noastră inițială, **nu o limită confirmată de SEAP**. Poate fi schimbată la 50 sau altă valoare pozitivă. Se aplică totalului PI + CN + SCN, nu fiecărei familii. Numără și anunțurile verificate din cache sau încercate cu eroare. Nu limitează TED.
-- Există și un buget de cereri de listare egal cu mărimea lotului: un interval lung/gol sau plin de duplicate nu poate genera pagini nelimitate într-o execuție. Un anunț CN/SCN poate necesita patru cereri de detalii; 100 de anunțuri nu înseamnă 100 de cereri HTTP. Retry-urile HTTP existente pentru timeout/429/5xx rămân limitate la trei încercări.
-- Checkpoint-ul salvează familia, zilele încheiate, pagina, răspunsul paginii curente, ID-urile procesate și statisticile. Pagina are în continuare 18 elemente, indiferent de mărimea lotului. Elementele rămase sunt procesate din răspunsul salvat înainte de a cere pagina următoare; zilele/familiile complete sunt sărite.
+- Limita 100 este politica noastră inițială, **nu o limită confirmată de SEAP**. Poate fi schimbată la 50 sau altă valoare pozitivă. Se aplică totalului PI + CN + SCN + ADV, nu fiecărei familii. Numără și anunțurile verificate din cache sau încercate cu eroare. Nu limitează TED.
+- Există și un buget de cereri de listare egal cu mărimea lotului: un interval lung/gol sau plin de duplicate nu poate genera pagini nelimitate într-o execuție. Un anunț CN/SCN poate necesita patru cereri de detalii; 100 de anunțuri nu înseamnă 100 de cereri HTTP. Retry-urile HTTP existente pentru timeout/5xx rămân limitate la trei încercări.
+- Checkpoint-ul salvează familia, zilele încheiate, pagina, răspunsul paginii curente, ID-urile procesate și statisticile. Paginile au 18 elemente pentru PI/CN/SCN și 100 pentru ADV, independent de mărimea lotului. Elementele rămase sunt procesate din răspunsul salvat înainte de a cere pagina următoare; zilele/familiile complete sunt sărite.
 - Checkpoint-urile vechi, fără cursor de pagină, sunt compatibile: prima reluare relistează doar ziua incompletă și sare ID-urile deja procesate. După aceea folosește cursorul nou. Nu sunt necesare migrări noi peste schema existentă cu `checkpoint`.
 - Oprirea normală la limita lotului este afișată „Lot încheiat — de continuat”, nu „Finalizată”. Statisticile per familie sunt cumulative; „încercate în acest lot” descrie execuția curentă.
-- La orice 403, SEAP se oprește imediat, păstrează datele/checkpoint-ul și nu mai apelează alte familii în acea execuție. Următoarea invocare cron poate continua după pauza configurată, implicit 60 minute. Nu există autorelansare în buclă, proxy sau bypass. Dacă SEAP continuă să restricționeze accesul, opriți cronul și verificați accesul legitim.
-- Un run incomplet este continuat cu **același ID și interval**, până sunt complete PI/CN/SCN. După terminare se creează un nou ciclu: de exemplu, ultima zi completă 15 septembrie + rulare pe 17 septembrie înseamnă intervalul **15–17 septembrie**. Ultima zi verificată este suprapunerea; nu se recitesc 30 de zile. Prima sincronizare fără reper pornește implicit cu 30 de zile.
+- La orice 403/429, SEAP se oprește imediat, păstrează datele/checkpoint-ul și nu mai apelează alte familii în acea execuție. Următoarea invocare cron poate continua după pauza configurată, implicit 60 minute. Nu există autorelansare în buclă, proxy sau bypass. Dacă SEAP continuă să restricționeze accesul, opriți cronul și verificați accesul legitim.
+- Un run incomplet este continuat cu **același ID și interval**, până sunt complete familiile înregistrate în checkpoint (PI/CN/SCN/ADV pentru cicluri noi). După terminare se creează un nou ciclu: de exemplu, ultima zi completă 15 septembrie + rulare pe 17 septembrie înseamnă intervalul **15–17 septembrie**. Ultima zi verificată este suprapunerea; nu se recitesc 30 de zile. O familie SEAP fără reper pornește de ieri, nu cu 30 de zile; un interval istoric se cere explicit. Reperul este separat pe familie. Perioada implicită TED rămâne cea existentă.
 - Ciclurile noi nu mai adaugă rotația zilelor istorice. Un checkpoint vechi care are deja o zi suplimentară o păstrează până termină acel ciclu. API-ul filtrează după publicare; suprapunerea nu garantează detectarea imediată a modificărilor unor proceduri publicate mult mai demult. După terminarea ciclului curent se poate cere explicit un interval istoric.
 - Cache-ul existent rămâne: listare identică + detalii complete mai recente de 3 zile evită cererile de detalii. Listările schimbate sau detaliile expirate sunt recitite. Deduplicarea și păstrarea datelor istorice sunt neschimbate; nu există ștergere automată.
 - În UI, TED rulează primul, fără limita SEAP. TED deja finalizat în acel run nu este repetat la reluare. `seap:tick` apelează numai SEAP; importul TED existent poate fi rulat independent cu `ted:scan`, fără a aștepta recuperarea istoricului SEAP. Loturile SEAP nu planifică automat alte importuri TED.
@@ -57,22 +58,22 @@ php artisan seap:tick --no-interaction
 Aceasta **pune în coadă cel mult un lot**, nu îl execută în procesul cron. Necesită workerul `tender`, descris mai jos. Exemplu cron (înlocuiți calea proiectului și binarul PHP cu cele reale de pe hosting):
 
 ```cron
-*/15 * * * * cd /CALE/ABSOLUTA/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
+0 */3 * * * cd /CALE/ABSOLUTA/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
 ```
 
-Cronul verifică la 15 minute, dar **nu pornește un nou lot înainte de cele 60 minute de pauză** și nu dublează un run activ. Astfel continuarea are loc la prima verificare după pauză. Pentru alt ritm schimbați `SEAP_BATCH_INTERVAL_MINUTES`; evitați frecvențele agresive. Nu este necesară o intrare Laravel Scheduler în plus față de acest cron direct.
+Recomandarea delta actuală: cron la trei ore, dar **nu pornește un nou lot înainte de cele 60 minute de pauză** și nu dublează un run activ. Astfel continuarea are loc la prima verificare după pauză. Pentru alt ritm schimbați `SEAP_BATCH_INTERVAL_MINUTES`; evitați frecvențele agresive. Nu este necesară o intrare Laravel Scheduler în plus față de acest cron direct.
 
 Nu programați în cron `seap:scan` fără limite: aceea rămâne comanda internă/diagnostică de import, iar apelul CLI direct nu are contextul persistent al unui `ScanRun`. Pentru recuperare periodică folosiți `seap:tick`; pentru testul diagnostic mic există opțiunile de mai jos. Nu rulați simultan importuri SEAP diagnostice și workerul de loturi.
 
 După modificarea configurației sau actualizarea codului, administratorul trebuie să refacă cache-ul de configurație și să restarteze workerul, conform secțiunii Deployment. Aceste operațiuni și cronul nu au fost executate în producție în această etapă.
 
-Butonul „Testează PI/CN/SCN fără import” face câte o cerere de listare fără detalii. Test real limitat din CLI (nu apelează TED):
+Butonul „Testează PI/CN/SCN/ADV fără import” face câte o cerere de listare fără detalii. Test real limitat din CLI (nu apelează TED):
 
 ```sh
 php artisan seap:scan --from=2026-08-03 --to=2026-09-11 --limit=1 --report --no-interaction
 ```
 
-Limita este per familie, maximum 18, și se aplică local chiar dacă API-ul întoarce mai multe elemente. Se citește o singură pagină per familie. Limita 1 înseamnă cel mult 3 cereri logice de listare și 9 de detalii; erorile temporare pot produce încercări HTTP suplimentare. Endpointul manual acceptă `mode=sample`, prin același job, cu limita fixă 1 per familie și fără TED. Testele limitate nu sunt sincronizări complete.
+Limita este per familie, maximum 18, și se aplică local chiar dacă API-ul întoarce mai multe elemente. Se citește o singură pagină per familie. Limita 1 înseamnă cel mult 4 cereri logice de listare și 10 de detalii; erorile temporare pot produce încercări HTTP suplimentare. Endpointul manual acceptă `mode=sample`, prin același job, cu limita fixă 1 per familie și fără TED. Testele limitate nu sunt sincronizări complete.
 
 ## Deployment
 
@@ -240,7 +241,7 @@ Exemple de configurat după revizuire, cu căile reale și PHP 8.3:
 
 ```cron
 */5 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:bulk-sync --year=2026 --limit=1000 --no-interaction >> storage/logs/seap-bulk-cron.log 2>&1
-*/15 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
+0 */3 * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan seap:tick --no-interaction >> storage/logs/seap-cron.log 2>&1
 */5 * * * * cd /CALE/TENDER-SCANNER && /CALE/PHP artisan queue:work tender --queue=tender-scans --stop-when-empty --max-jobs=1 --tries=1 --no-interaction >> storage/logs/worker-cron.log 2>&1
 ```
 
@@ -282,7 +283,9 @@ Fișierele acestei etape (29):
 
 Migrarea adaugă și `notices.seap_official_number`, unic și completat numai pentru identități CN/SCN neambigue. Protejează inclusiv împotriva inserărilor concurente bulk/API; nu unește automat duplicate istorice ambigue. La rollback titlul rămâne TEXT, pentru a nu trunchia titlurile importate. Pregătirea indexului are o limită proprie de patru minute, sub durata lock-ului bulk.
 
-## Achiziții directe DA/DAN și limita integrării ADV — 16.09.2026
+## Audit istoric: achiziții directe DA/DAN — 16.09.2026
+
+> Concluziile despre blocarea ADV de mai jos descriu auditul din 16 septembrie. Integrarea verificată ulterior este documentată în secțiunea „Delta live și ADV — 17.09.2026”.
 
 **ADV active nu sunt încă importate.** La audit, accesarea publică `https://e-licitatie.ro/pub` a primit pagina oficială „Accesul de la adresa dumneavoastră IP a fost restricționat”, care menționează volumul de trafic automat. Cererile către SEAP au fost oprite. Nu s-a confirmat un endpoint JSON ADV, schema răspunsului, enumerația stărilor sau câmpul deadline. Nu s-au inventat endpointuri și nu s-au încercat proxy-uri, alte identități sau alte metode de ocolire. Pentru finalizarea ADV este necesar acces oficial permis și verificarea listării/detaliilor reale, inclusiv termenul exact și referințele documentelor. Această etapă livrează partea verificabilă DA/DAN, nu un import ADV pretins funcțional.
 
@@ -368,4 +371,108 @@ Fișiere noi (2):
 - `database/migrations/2026_09_16_155700_extend_supplier_history_for_direct_purchases.php`
 - `tests/Feature/DirectPurchaseHistoryTest.php`
 
-Stare la raportare: `master`, ahead 1 față de `origin/master` din commitul anterior `1e8d615`, opt fișiere modificate și două noi, nimic staged. Exporturile descărcate și fișierele generate sunt ignorate de Git. Mesaj propus pentru partea implementată: `Add official direct purchase history and SEAP family filtering`. Nu folosi un mesaj care ar sugera că importul ADV active este deja funcțional.
+Stare la raportarea din 16 septembrie: `master`, ahead 1 față de `origin/master` din commitul anterior `1e8d615`, opt fișiere modificate și două noi, nimic staged. Exporturile descărcate și fișierele generate sunt ignorate de Git. Mesaj propus pentru acea etapă: `Add official direct purchase history and SEAP family filtering`.
+
+## Delta live și ADV — 17.09.2026
+
+### Contract oficial verificat
+
+Auditul limitat din mediul local a primit HTTP 200 de la pagina oficială [Publicitate anunțuri](https://e-licitatie.ro/pub/notices/adv-notices/), bundle-ul JavaScript public `app-pub` și serviciul oficial [adv-notice/service.min.js](https://e-licitatie.ro/views/pub/notices/adv-notice/service.min.js). Acestea confirmă listarea POST `https://e-licitatie.ro/api-pub/AdvNoticeCommon/GetAdvNoticeList/` și detaliul GET `https://e-licitatie.ro/api-pub/PUBLICAdvNotice/getForView/{id}`. Nu se extrag anunțuri din HTML.
+
+Payload-ul minimal verificat pentru listare:
+
+```json
+{"pageSize":100,"pageIndex":0,"publicationDateStart":"2026-09-16T00:00:00+03:00","publicationDateEnd":"2026-09-16T23:59:59+03:00"}
+```
+
+`pageIndex` începe la zero. Interfața oficială enumeră dimensiunile 5, 10, 25, 50, 100. Răspunsul conține `total`, `items`, `searchTooLong`. Codul public confirmă și filtrele `noticeNo`, `contractObject`, `sysAdvertisingNoticeId`, `sysAcquisitionContractTypeId`, `cpvCodeId`, `contractingAuthorityId`, `sysNoticeStateId`, intervalele valorii estimate și `createDateStart` / `createDateEnd`; scannerul nu are nevoie de acestea pentru delta. **Nu a fost confirmat un filtru pentru data modificării.** `createDate` nu este folosit ca dată de modificare.
+
+Au fost făcute numai două POST-uri de listare și un GET de detaliu, plus cele trei citiri ale aplicației publice. Primul POST, pagina de 5 pentru 16 septembrie, a raportat **212 ADV**, cu 5 rânduri. Al doilea, pagina de 100, cu începutul la ora 18:00, a returnat tot totalul 212 și rânduri anterioare orei 18:00. Nu considerăm orele filtre fiabile; folosim zile întregi în Europe/Bucharest. Nu s-au parcurs toate paginile și nu s-a făcut import în baza locală sau în producție. Numărul 212 este o observație pentru acea zi, nu o medie zilnică. Pagina de detaliu verificată: [ADV1548284](https://e-licitatie.ro/pub/notices/adv-notices/view/100734971).
+
+| Informație | Câmp oficial și disponibilitate |
+| --- | --- |
+| Identitate | Listare `advNoticeId`, `noticeNo`; detaliu `advertisingNoticeId` |
+| Titlu / autoritate | Listare `contractObject`, `contractingAuthority` (textul combinat este păstrat, fără separare CUI presupusă) |
+| CPV | Listare `cpvCode`, forma `35125300-2 - ...`; detaliu `cpvCode.localeKey` / `text` |
+| Valoare | `estimatedValue`, `minEstimatedValue`, `maxEstimatedValue`; intervalul se păstrează în metadata |
+| Publicare / termen exact | `publicationDate`, `tenderReceiptDeadline`, cu oră și offset |
+| Stare / tip | `sysNoticeState.id` / `text`, `sysAdvertisingNotice`, `sysAcquisitionContractType` |
+| CUI / monedă / localizare | Numai când se preiau detalii: `noticeEntityAddress.nationalIDNumber`, `currency.text`, `noticeEntityAddress.county.text` / `city` |
+| Descriere / condiții | Detaliu `contractDescription`, `participationConditions`, `contractRelatedConditions`, `additionalInformation`, `awardCriteria` |
+| Documentație | Detaliu `documentID`, `documentName`, `documentUrl`, `documentUniqueIdentificationCode`; numai referințe, fără descărcare |
+| Versiune / părinte | Detaliu `versionPublicationDate`, `parentAdvertisingNoticeId`; păstrate, fără a presupune semantica completă a versiunilor |
+
+Lista nu furnizează monedă structurată în eșantion; nu se atribuie automat RON. Enumerația integrală a stărilor nu este confirmată. Starea 2 / Publicat a fost observată; alte stări nu sunt considerate active. Tipurile observate sunt Achizitii directe, Cumparari directe și Anexa 2. Un tip necunoscut este păstrat ca istoric, nu promovat automat ca oportunitate.
+
+### Integrare și corectitudine
+
+ADV folosește `SeapClient` → `SeapImporter` → `SeapNormalizer` → `NoticeIngestor`, prin același `ScanDispatcher`, job și checkpoint. Identitatea sursei este `ADV:{advNoticeId}`, familia este `seap_metadata.family=ADV`, iar numărul oficial ADV folosește cheia unică existentă `seap_official_number`. Același număr oficial și aceeași familie actualizează același Notice, inclusiv când identificatorul intern se schimbă. PI/CN/SCN rămân separate chiar dacă ID-urile numerice coincid. Nu există reunire ADV–TED sau ADV–DA/DAN prin asemănare.
+
+Activarea cere termen ISO complet și valid, strict în viitor conform regulii existente, stare Publicat confirmată și tip de publicitate cunoscut. Termenul este exclusiv `tenderReceiptDeadline`, normalizat la ora Bucureștiului; data finalizării DA/DAN nu este consultată. Un termen devenit necunoscut este șters din valoarea curentă, iar anunțul nu rămâne activ cu termenul vechi. Istoricul de revizii și datele personale sunt păstrate; nu se șterg anunțuri.
+
+Implicit, ADV folosește **doar listarea**. `SEAP_FETCH_ADV_DETAILS=false` este valoarea implicită; `true` permite GET-ul de detaliu pentru completare. Modul diagnostic `--limit=1` cere și detaliul unui ADV. Testul fără import cere pagina minimă ADV confirmată, de 5 elemente, iar sample procesează numai limita cerută din acea pagină. Cache-ul existent evită repetarea detaliilor complete recente când listarea este identică. Referințele documentelor se păstrează dacă se preiau detalii; în modul implicit fără detalii nu promitem că toate anunțurile vor avea documentația identificată. Nu există download/analiză PDF.
+
+Ciclurile noi înregistrează `_families` și `_ranges` în `scan_runs.checkpoint`. Fiecare familie începe de la ultima zi finalizată pentru ea, inclusiv acea zi (overlap). Fără reper, începe de ieri. Zilele și paginile sunt parcurse până la `total`, în loturi de maximum `SEAP_BATCH_SIZE` anunțuri, implicit 100 în total; pagina curentă rămâne în checkpoint. Un răspuns gol înainte de total, invalid sau `searchTooLong=true` produce eroare, nu avansează ziua. Nu încercăm subîmpărțire orară nedovedită. O zi trunchiată necesită investigare oficială, nu un succes fals.
+
+Checkpoint-urile existente fără `_families` continuă cele trei familii originale până la finalizare; ADV intră în următorul ciclu, cu propriul reper. Nu se resetează o coadă veche și nu se marchează ADV sincronizat doar pentru că PI/CN/SCN sunt complete. Datele cerute manual se aplică tuturor familiilor noului ciclu. UI afișează ADV și intervalul efectiv per familie; perioada TED rămâne separată. Un checkpoint incomplet are prioritate față de un interval manual nou, ca înainte.
+
+PI păstrează detaliul necesar normalizării existente. CN/SCN păstrează implicit listările fără cele patru detalii per anunț. Reducerea nouă comună este bootstrap-ul scurt și reperul separat, fără reluarea implicită a 30 de zile. Bulk `data.gov.ro` rămâne responsabil de volum/istoric și de verificarea limitată a unei zile bulk neconfirmate, conform implementării anterioare. ADV nu este sărit din cauza acoperirii bulk CN/SCN.
+
+403 **și 429** opresc imediat toate apelurile SEAP din execuție, inclusiv familiile rămase. Nu există retry în aceeași rulare pentru aceste coduri; datele și pagina sunt păstrate. Retry-ul limitat pentru timeout/5xx rămâne. Reluarea periodică respectă pauza existentă. TED rulează independent, nu este limitat de lotul SEAP.
+
+### Cost, ritm și limite
+
+Pentru fiecare zi efectiv interogată, fără erori/retry: `L(N,P) = max(1, ceil(N/P))`. O zi goală necesită tot o listare. Costul unui ciclu este suma zilelor, inclusiv overlap; costul zilnic real este suma ciclurilor pornite/continuate în acea zi. Continuarea paginii salvate nu face o listare nouă.
+
+| Familie | Listări pe zi interogată | Detalii implicite | Documente |
+| --- | --- | --- | --- |
+| ADV | `L(N_ADV,100)` | 0; opțional maximum 1 per anunț care necesită completare | 0 |
+| PI | `L(N_PI,18)` | 1 per anunț nou/schimbat sau cu detalii expirate/lipsă | 0 |
+| CN | `L(N_CN,18)` | 0; opțional 4 per anunț care necesită completare | 0 |
+| SCN | `L(N_SCN,18)` | 0; opțional 4 per anunț care necesită completare | 0 |
+
+Cele 212 ADV observate ar necesita **3 listări, 0 detalii, 0 documente** pentru o traversare completă a zilei, distribuită pe loturi. Nu pretindem că toate trei au fost executate. Pentru PI/CN/SCN nu s-a făcut o măsurare live nouă. Ziua bulk suplimentară, retry-urile timeout/5xx și overlap-ul se adaugă formulei.
+
+Recomandare inițială conservatoare: înlocuirea cronului SEAP anterior cu `0 */3 * * * ... php artisan seap:tick --no-interaction` (o verificare la trei ore), folosind **workerul tender existent**, unic. Nu adăugați un al doilea cron sau worker. Pauza minimă configurată de 60 minute rămâne în vigoare. Nu s-a schimbat cronul real. La 100/lot, opt rulări permit cel mult 800 verificări/zi, incluzând overlap; volumul, duratele și restricțiile pot impune revizuirea ritmului. Dacă intrările depășesc capacitatea, progresul este păstrat, dar nu promitem actualizare în aceeași zi. Bulk își păstrează cronul și responsabilitatea istorică; nu este substitut pentru deadline-ul live.
+
+Aplicația poate descoperi publicările recente fără scanare masivă și fără detalii per ADV. **Nu garantează toate modificările anunțurilor publicate înainte de overlap**, deoarece nu avem un filtru oficial „modified since”. Nici accesul local 200 nu dovedește că IP-ul KabyNode este deblocat. Nu există blocaj local de acces în acest audit; accesul curent KabyNode nu a fost testat și nu s-a făcut deployment.
+
+Dacă hostingul rămâne restricționat, varianta minimă ulterioară este un worker SEAP dintr-un mediu autorizat de operator: același client/normalizator, export JSON semnat al lotului și checkpoint-ului, transmis printr-un canal autentificat; aplicația de pe hosting ar valida și aplica lotul prin `NoticeIngestor`, apoi ar confirma recepția înainte de avansarea checkpoint-ului. Necesită implementare/revizuire separată a transportului, autentificării și protecției la replay; **nu există acum un endpoint de upload sau infrastructură externă**. Mutarea traficului între IP-uri pentru evitarea unei restricții nu este o soluție implementată sau recomandată.
+
+Testele ADV folosesc date sintetice cu structura oficială verificată, fără contacte personale sau documente descărcate. Acoperă paginare, loturi, checkpoint, overlap per familie, 403/429 și reluare, identitate/upsert, deadline invalid/necunoscut/expirat și schimbat, stare, date personale, referințe documente și fluxul manual pentru toate cele patru familii. Validarea sintetică nu înlocuiește validarea endpointului live limitată descrisă mai sus. Nu sunt necesare migrări noi.
+
+### Verificare finală și fișiere
+
+Suita completă: **208 teste / 1.299 aserțiuni**, toate trecute. `php vendor/bin/pint --dirty --format agent`, `npm run build` și `git diff --check` au trecut. Build-ul păstrează avertismentul existent despre pachetul opțional `fontaine`, fără eroare. Datele de audit și artefactele build sunt ignorate de Git; nu intră în modificările versionate.
+
+Fișiere modificate (23):
+
+```text
+.env.example
+README.md
+app/Console/Commands/ScanSeapNotices.php
+app/Jobs/RunManualScan.php
+app/Models/Notice.php
+app/Models/ScanRun.php
+app/Services/NoticeIngestor.php
+app/Services/ScanDispatcher.php
+app/Services/SeapClient.php
+app/Services/SeapImporter.php
+app/Services/SeapNormalizer.php
+config/services.php
+resources/js/app.js
+resources/views/notices/index.blade.php
+resources/views/notices/scan-family-results.blade.php
+resources/views/notices/scan-panel.blade.php
+tests/Feature/ManualScanFamiliesTest.php
+tests/Feature/NoticeSourceFilterTest.php
+tests/Feature/SeapBatchTest.php
+tests/Feature/SeapBulkTest.php
+tests/Feature/SeapClientTest.php
+tests/Feature/SeapImportTest.php
+tests/Feature/SeapStabilizationTest.php
+```
+
+Fișier nou: `tests/Feature/AdvDeltaTest.php` (21 cazuri de test, incluzând variantele parametrizate).
+
+Stare finală: `master`, ahead 2 față de `origin/master` (commituri preexistente), 23 fișiere modificate și unul nou, nimic staged. Fără commit, push, deployment, scanare completă live sau modificări KabyNode. Mesaj propus: `Add verified ADV daily delta with resumable SEAP checkpoints`.

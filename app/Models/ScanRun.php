@@ -12,10 +12,16 @@ class ScanRun extends Model
 
     protected $casts = ['checkpoint' => 'array', 'results' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'heartbeat_at' => 'datetime'];
 
+    /** @return array<int, string> */
+    public function families(): array
+    {
+        return $this->checkpoint['_families'] ?? ['PI', 'CN', 'SCN'];
+    }
+
     public function seapComplete(): bool
     {
         return data_get($this->results, 'seap.status') === 'completed'
-            && collect(['PI', 'CN', 'SCN'])->every(fn (string $family): bool => (bool) data_get($this->results, "seap.families.$family.complete", false));
+            && collect($this->families())->every(fn (string $family): bool => (bool) data_get($this->results, "seap.families.$family.complete", false));
     }
 
     public function batchAvailable(): bool
@@ -46,12 +52,13 @@ class ScanRun extends Model
         $families = $results['seap']['families'] ?? [];
         $terminal = ! in_array($this->status, ['queued', 'running'], true);
         $unverified = false;
-        foreach (['PI', 'CN', 'SCN'] as $family) {
+        foreach ($this->families() as $family) {
             if (! isset($families[$family])) {
                 $unverified = $terminal;
                 $families[$family] = ['status' => $terminal ? 'unverified' : 'pending', 'processed' => null,
                     'reported' => null, 'fetched' => null, 'new' => 0, 'updated' => 0, 'duplicates' => 0,
-                    'errors' => [], 'complete' => false, 'from' => $this->date_from, 'to' => $this->date_to];
+                    'errors' => [], 'complete' => false, 'from' => $this->checkpoint['_ranges'][$family]['from'] ?? $this->date_from,
+                    'to' => $this->checkpoint['_ranges'][$family]['to'] ?? $this->date_to];
             }
         }
         $results['seap']['families'] = $families;

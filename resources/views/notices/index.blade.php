@@ -67,7 +67,7 @@
                                 <option value="{{ $family }}" @selected(request('family') === $family)>{{ $family }}</option>
                             @endforeach
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">Importul ADV active nu este încă disponibil; exporturile DA/DAN sunt doar istoric de achiziții.</p>
+                        <p class="text-xs text-gray-500 mt-1">ADV sunt anunțuri de publicitate. Achizițiile DA/DAN finalizate rămân în istoricul furnizorilor.</p>
                     </div>
                 @endif
                 @if ($errors->any())

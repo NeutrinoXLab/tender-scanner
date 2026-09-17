@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\ScanRun;
 use App\Services\ScanContext;
-use App\Services\SeapClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
@@ -55,7 +54,7 @@ class RunManualScan implements ShouldQueue
                 try {
                     $options = ['--from' => $run->date_from, '--to' => $run->date_to];
                     if ($source === 'seap') {
-                        $options['--family'] = ['PI', 'CN', 'SCN'];
+                        $options['--family'] = $run->families();
                         if ($sample) {
                             $options['--limit'] = 1;
                         }
@@ -64,6 +63,7 @@ class RunManualScan implements ShouldQueue
                         }
                     }
                     if ($source === 'ted') {
+                        $options['--from'] = $run->checkpoint['_ted_from'] ?? $run->date_from;
                         $options['--max-pages'] = 300;
                     }
                     $exit = Artisan::call($source.':scan', $options, new NullOutput);
@@ -74,7 +74,7 @@ class RunManualScan implements ShouldQueue
                     $context->error($e->getMessage());
                 }
                 if ($source === 'seap') {
-                    foreach (array_keys(SeapClient::FAMILIES) as $family) {
+                    foreach ($run->families() as $family) {
                         $stats = $context->families[$family] ?? null;
                         $waitingForBatch = ! $limited && ($stats['status'] ?? null) === 'paused';
                         if (! $waitingForBatch && ($stats === null || ($stats['status'] ?? null) !== $expected || (! $limited && ! ($stats['complete'] ?? false)))) {

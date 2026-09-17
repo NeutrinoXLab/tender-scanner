@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Services\SeapAccessRestricted;
 use App\Services\SeapClient;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -77,7 +76,7 @@ class SeapClientTest extends TestCase
         }
     }
 
-    public function test_stops_after_three_http_429_responses(): void
+    public function test_does_not_retry_http_429(): void
     {
         Sleep::fake();
         Http::preventStrayRequests();
@@ -86,9 +85,9 @@ class SeapClientTest extends TestCase
         try {
             app(SeapClient::class)->getFamilyNotices('CN', 18, 0, null, null);
             $this->fail('HTTP error expected.');
-        } catch (RequestException $exception) {
-            $this->assertSame(429, $exception->response->status());
-            Http::assertSentCount(3);
+        } catch (SeapAccessRestricted $exception) {
+            $this->assertStringContainsString('429', $exception->getMessage());
+            Http::assertSentCount(1);
         }
     }
 

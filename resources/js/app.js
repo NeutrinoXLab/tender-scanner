@@ -34,17 +34,18 @@ if (panel) {
         for (const [source, result] of Object.entries(scan.results)) {
             line(`${source.toUpperCase()}: ${labels[result.status]} — ${result.new} noi, ${result.updated} actualizate, ${result.unchanged} fără modificări.`);
             if (source === 'seap') {
-                for (const family of ['PI', 'CN', 'SCN']) {
+                for (const family of Object.keys(result.families || {})) {
                     const stats = result.families?.[family];
                     line(`${family}: ${stats?.processed ?? '—'} verificate · ${labels[stats?.status] || labels.unverified} · ${stats?.fetched ?? '—'} preluate / ${stats?.reported ?? '—'} raportate · ${stats?.new ?? 0} noi · ${stats?.updated ?? 0} actualizate · ${stats?.duplicates ?? 0} duplicate`);
                     if (stats?.batch_attempted !== undefined) line(`${family}: ${stats.batch_attempted} încercate în acest lot.`);
+                    if (stats?.from) line(`${family}: perioadă ${stats.from} – ${stats.to}.`);
                     if (stats?.bulk_days) line(`${family}: ${stats.bulk_days} zile acoperite de exportul oficial, fără interogare API.`);
                     if (stats?.refresh_day) line(`${family}: reverificare anunțuri mai vechi din ${stats.refresh_day}.`);
                     for (const error of stats?.errors || []) line(`${family}: ${error}`, true);
                 }
                 line(`Total SEAP: ${result.checked} verificate`);
                 if (Object.values(result.families || {}).some(stats => stats.status === 'unverified')) {
-                    line('Lipsește confirmarea executării unei familii. Raportul vechi nu dovedește acoperirea PI/CN/SCN; verificați versiunea procesului de fundal.', true);
+                    line('Lipsește confirmarea executării unei familii; verificați versiunea procesului de fundal.', true);
                 }
             }
             if (result.error_count) line(`Erori ${source.toUpperCase()}: ${result.error_count}`, true);

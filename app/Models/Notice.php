@@ -102,6 +102,12 @@ class Notice extends Model
             $query->where('source', '!=', 'seap')->orWhere(function (Builder $query): void {
                 $query->whereIn('status', ['Publicat', 'In desfasurare', 'În desfășurare'])
                     ->where(function (Builder $query): void {
+                        $query->whereNull('seap_metadata->family')->orWhere('seap_metadata->family', '!=', 'ADV')
+                            ->orWhere(fn (Builder $adv) => $adv->where('seap_metadata->deadline_confirmed', true)
+                                ->where('seap_metadata->notice_state_id', 2)->where('seap_metadata->opportunity_type_confirmed', true)
+                                ->where('submission_deadline', '>', now('Europe/Bucharest')->format('Y-m-d H:i:s')));
+                    })
+                    ->where(function (Builder $query): void {
                         $query->whereNull('seap_metadata')->orWhereIn('seap_metadata->category', ['opportunity', 'planning']);
                     })->where(function (Builder $query): void {
                         $query->where('submission_deadline', '>=', now('Europe/Bucharest')->format('Y-m-d H:i:s'))

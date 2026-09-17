@@ -2,10 +2,16 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
+use RuntimeException;
+
 class SeapNormalizer
 {
     public function normalize(string $family, array $item, array $details): array
     {
+        if ($family === 'ADV') {
+            return $this->normalizeAdv($item, $details);
+        }
         if ($family === 'PI') {
             $attributes = $this->normalizePi($item, $details);
             $attributes['notice_type'] = 'PI — Anunț de intenție';
@@ -70,6 +76,65 @@ class SeapNormalizer
     private function text(mixed $value): ?string
     {
         return is_array($value) ? ($value['text'] ?? null) : (is_string($value) && trim($value) !== '' ? $value : null);
+    }
+
+    /** @return array<string, mixed> */
+    private function normalizeAdv(array $item, array $details): array
+    {
+        $number = $details['noticeNo'] ?? $item['noticeNo'] ?? '';
+        if (! preg_match('/^ADV\d+$/', $number) || empty($item['contractObject'])) {
+            throw new RuntimeException('Identitate sau titlu ADV invalid.');
+        }
+        if ($details !== [] && $number !== ($item['noticeNo'] ?? null)) {
+            throw new RuntimeException('Numărul ADV din detaliu diferă de listare.');
+        }
+        $data = array_replace($item, $details);
+        $deadline = $data['tenderReceiptDeadline'] ?? null;
+        $parsed = is_string($deadline) ? date_parse($deadline) : null;
+        $confirmed = is_string($deadline) && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/', $deadline)
+            && $parsed['error_count'] === 0 && $parsed['warning_count'] === 0;
+        $cpv = $item['cpvCode'] ?? '';
+        preg_match('/^(\d{8}-\d)\s*-\s*(.*)$/u', is_string($cpv) ? $cpv : '', $cpvParts);
+        $stateId = data_get($data, 'sysNoticeState.id') ?? ($data['sysNoticeStateId'] ?? 0);
+        $state = $stateId === 2 ? 'Publicat' : (data_get($data, 'sysNoticeState.text') ?? 'Necunoscut');
+        $type = data_get($details, 'sysAdvertisingNotice.text') ?? ($item['sysAdvertisingNotice'] ?? null);
+        $metadata = [
+            'family' => 'ADV', 'family_id' => (string) $item['advNoticeId'], 'category' => 'opportunity', 'bulk_only' => false,
+            'contract_type_id' => $details['sysAcquisitionContractTypeId'] ?? null, 'notice_state_id' => $stateId,
+            'deadline_confirmed' => (bool) $confirmed,
+            'opportunity_type_confirmed' => in_array($type, ['Achizitii directe', 'Cumparari directe', 'Anexa 2'], true),
+            'advertising_type' => $type, 'advertising_type_id' => $details['sysAdvertisingNoticeId'] ?? null,
+            'parent_id' => $details['parentAdvertisingNoticeId'] ?? null,
+            'version_publication_date' => $details['versionPublicationDate'] ?? null,
+            'authority_cui' => data_get($details, 'noticeEntityAddress.nationalIDNumber'),
+            'cpv_name' => data_get($details, 'cpvCode.text') ?? ($cpvParts[2] ?? null),
+            'estimated_range' => ['min' => $data['minEstimatedValue'] ?? null, 'max' => $data['maxEstimatedValue'] ?? null],
+            'ted_references' => [],
+            'participation_conditions' => $details['participationConditions'] ?? null,
+            'contract_conditions' => $details['contractRelatedConditions'] ?? null,
+            'additional_information' => $details['additionalInformation'] ?? null,
+        ];
+        if ($details !== []) {
+            $metadata['document'] = [
+                'id' => $details['documentID'] ?? null, 'name' => $details['documentName'] ?? null,
+                'reference' => $details['documentUrl'] ?? null, 'identification_code' => $details['documentUniqueIdentificationCode'] ?? null,
+            ];
+        }
+
+        return [
+            'notice_number' => $number, 'title' => $data['contractObject'], 'notice_type' => 'ADV — Anunț de publicitate',
+            'authority_name' => $details['contractAuthorityName'] ?? ($item['contractingAuthority'] ?? null),
+            'authority_seap_id' => isset($details['contractingAuthorityId']) ? (string) $details['contractingAuthorityId'] : null,
+            'publication_date' => $data['publicationDate'] ?? null,
+            'submission_deadline' => $confirmed ? CarbonImmutable::parse($deadline)->timezone('Europe/Bucharest')->toIso8601String() : null,
+            'status' => $state, 'cpv_code' => data_get($details, 'cpvCode.localeKey') ?? ($cpvParts[1] ?? null),
+            'contract_type' => data_get($details, 'sysAcquisitionContractType.text') ?? ($item['sysAcquisitionContractType'] ?? null),
+            'estimated_value' => $data['maxEstimatedValue'] ?? $data['estimatedValue'] ?? ($details['value'] ?? null),
+            'currency' => data_get($details, 'currency.text'), 'description' => $details['contractDescription'] ?? null,
+            'county' => data_get($details, 'noticeEntityAddress.county.text'), 'locality' => data_get($details, 'noticeEntityAddress.city'),
+            'award_criteria' => $details['awardCriteria'] ?? null,
+            'seap_url' => 'https://e-licitatie.ro/pub/notices/adv-notices/view/'.$item['advNoticeId'], 'seap_metadata' => $metadata,
+        ];
     }
 
     /** @return array<string, string> */

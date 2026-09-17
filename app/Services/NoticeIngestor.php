@@ -72,7 +72,9 @@ class NoticeIngestor
             foreach (['source', 'seap_id', 'ted_id', 'ted_url', 'seap_url', 'raw_data', 'ted_data'] as $key) {
                 unset($normalized[$key]);
             }
-            $normalized = array_filter($normalized, fn ($value) => $value !== null);
+            $authoritativeAdv = $source === 'seap' && data_get($attributes, 'seap_metadata.family') === 'ADV';
+            $normalized = array_filter($normalized, fn ($value, $key) => $value !== null
+                || ($authoritativeAdv && in_array($key, ['submission_deadline', 'status'], true)), ARRAY_FILTER_USE_BOTH);
             $before = $this->normalize($entry?->normalized_data ?? []);
             if (isset($normalized['seap_metadata'], $before['seap_metadata'])) {
                 $normalized['seap_metadata'] = array_replace($before['seap_metadata'], array_filter($normalized['seap_metadata'], fn ($value) => $value !== null));
@@ -99,7 +101,7 @@ class NoticeIngestor
                 }
             }
             if ($source === 'seap') {
-                if (preg_match('/^(?:CN|SCN)\d+$/', $attributes['notice_number'] ?? '')) {
+                if (preg_match('/^(?:CN|SCN|ADV)\d+$/', $attributes['notice_number'] ?? '')) {
                     $notice->seap_official_number = $attributes['notice_number'];
                 }
                 $notice->seap_id = $id;

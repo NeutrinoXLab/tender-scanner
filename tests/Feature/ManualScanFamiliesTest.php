@@ -22,12 +22,14 @@ class ManualScanFamiliesTest extends TestCase
         'PI' => 'https://e-licitatie.ro/api-pub/PUBLICPINotice/GetAll/',
         'CN' => 'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/',
         'SCN' => 'https://e-licitatie.ro/api-pub/PublicRFQInvitation/GetAll/',
+        'ADV' => 'https://e-licitatie.ro/api-pub/AdvNoticeCommon/GetAdvNoticeList/',
     ];
 
     private function fakeFamilies(int $total = 1, array $overrides = []): void
     {
         Http::preventStrayRequests();
         Http::fake(array_replace([
+            self::ENDPOINTS['ADV'] => Http::response(['total' => 0, 'items' => []]),
             self::ENDPOINTS['PI'] => Http::response(['total' => $total, 'items' => [['piNoticeId' => 100, 'title' => 'PI']]]),
             self::ENDPOINTS['CN'] => Http::response(['total' => $total, 'items' => [['cNoticeID' => 100, 'contractTitle' => 'CN']]]),
             self::ENDPOINTS['SCN'] => Http::response(['total' => $total, 'items' => [['rfqInvitationId' => 100, 'title' => 'SCN', 'sysNoticeType' => ['id' => 17]]]]),
@@ -50,7 +52,7 @@ class ManualScanFamiliesTest extends TestCase
         return $run->fresh();
     }
 
-    public function test_button_calls_all_three_families_and_transmits_identical_daily_date_windows(): void
+    public function test_button_calls_all_four_families_and_transmits_identical_daily_date_windows(): void
     {
         $this->fakeFamilies();
         $this->mock(TedClient::class, fn ($mock) => $mock->shouldReceive('search')->once()->andReturn(['totalNoticeCount' => 0, 'notices' => []]));
@@ -60,12 +62,12 @@ class ManualScanFamiliesTest extends TestCase
         foreach (self::ENDPOINTS as $family => $endpoint) {
             foreach (['2026-09-09', '2026-09-10'] as $day) {
                 Http::assertSent(fn (Request $request) => $request->url() === $endpoint && $request->method() === 'POST'
-                    && $request['publicationDateFrom'] === $day.'T00:00:00+03:00'
-                    && $request['publicationDateTo'] === $day.'T23:59:59+03:00'
-                    && $request['pageSize'] === 18 && $request['pageIndex'] === 0);
+                    && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === $day.'T00:00:00+03:00'
+                    && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === $day.'T23:59:59+03:00'
+                    && $request['pageSize'] === ($family === 'ADV' ? 100 : 18) && $request['pageIndex'] === 0);
             }
-            $this->assertSame(1, $run->results['seap']['families'][$family]['processed']);
-            $this->assertSame(1, $run->results['seap']['families'][$family]['duplicates']);
+            $this->assertSame($family === 'ADV' ? 0 : 1, $run->results['seap']['families'][$family]['processed']);
+            $this->assertSame($family === 'ADV' ? 0 : 1, $run->results['seap']['families'][$family]['duplicates']);
             $this->assertTrue($run->results['seap']['families'][$family]['complete']);
         }
         $this->assertSame(3, $run->counts('seap')['checked']);
@@ -74,16 +76,17 @@ class ManualScanFamiliesTest extends TestCase
         $this->get('/notices')->assertSee('PI:')->assertSee('CN:')->assertSee('SCN:')->assertSee('Total SEAP: 3 verificate');
     }
 
-    public function test_probe_from_same_button_is_bounded_to_three_listing_requests_and_never_imports(): void
+    public function test_probe_from_same_button_is_bounded_to_four_listing_requests_and_never_imports(): void
     {
         $this->fakeFamilies(10000);
         $this->mock(TedClient::class, fn ($mock) => $mock->shouldNotReceive('search'));
         $run = $this->dispatchFromButton(['mode' => 'probe', 'from' => '2026-08-03', 'to' => '2026-09-11']);
 
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
         foreach (self::ENDPOINTS as $family => $endpoint) {
-            Http::assertSent(fn (Request $request) => $request->url() === $endpoint && $request['pageSize'] === 1 && $request['pageIndex'] === 0
-                && $request['publicationDateFrom'] === '2026-08-03T00:00:00+03:00' && $request['publicationDateTo'] === '2026-09-11T23:59:59+03:00');
+            Http::assertSent(fn (Request $request) => $request->url() === $endpoint && $request['pageSize'] === ($family === 'ADV' ? 5 : 1) && $request['pageIndex'] === 0
+                && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === '2026-08-03T00:00:00+03:00'
+                && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === '2026-09-11T23:59:59+03:00');
             $this->assertSame('probe_ok', $run->results['seap']['families'][$family]['status']);
             $this->assertFalse($run->results['seap']['families'][$family]['complete']);
         }
@@ -95,7 +98,7 @@ class ManualScanFamiliesTest extends TestCase
 
     public function test_missing_families_cannot_be_reported_as_completed_even_if_command_returns_zero(): void
     {
-        Artisan::shouldReceive('call')->with('seap:scan', \Mockery::on(fn ($options) => $options['--family'] === ['PI', 'CN', 'SCN']), \Mockery::any())
+        Artisan::shouldReceive('call')->with('seap:scan', \Mockery::on(fn ($options) => $options['--family'] === ['PI', 'CN', 'SCN', 'ADV']), \Mockery::any())
             ->once()->andReturnUsing(function (): int {
                 app(ScanContext::class)->families = ['PI' => ['status' => 'completed', 'complete' => true]];
 
@@ -108,6 +111,7 @@ class ManualScanFamiliesTest extends TestCase
         $this->assertSame('error', $run->results['seap']['status']);
         $this->assertSame('unverified', $run->summary()['results']['seap']['families']['CN']['status']);
         $this->assertSame('unverified', $run->summary()['results']['seap']['families']['SCN']['status']);
+        $this->assertSame('unverified', $run->summary()['results']['seap']['families']['ADV']['status']);
     }
 
     public function test_progress_is_persisted_before_the_next_family_finishes(): void
@@ -132,7 +136,7 @@ class ManualScanFamiliesTest extends TestCase
         $this->assertSame('failed', $run->status);
         $this->assertSame('error', $run->results['seap']['families']['CN']['status']);
         $this->assertSame('probe_ok', $run->results['seap']['families']['SCN']['status']);
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
     }
 
     public function test_restricted_access_stops_further_requests_and_marks_unexecuted_families(): void
@@ -151,7 +155,7 @@ class ManualScanFamiliesTest extends TestCase
         Http::preventStrayRequests();
         Http::fake(array_fill_keys(array_values(self::ENDPOINTS), Http::response(['total' => 0, 'items' => []])));
         $run = $this->dispatchFromButton(['mode' => 'probe', 'from' => '2026-09-10', 'to' => '2026-09-10']);
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
         $this->assertSame('tested', $run->status);
         $this->assertSame(0, $run->results['seap']['families']['SCN']['reported']);
         $legacy = ScanRun::create(['status' => 'completed', 'date_from' => '2026-08-03', 'date_to' => '2026-09-11',

@@ -13,12 +13,12 @@ class ScanSeapNotices extends Command
     protected $signature = 'seap:scan
                             {--from= : Data de inceput, format YYYY-MM-DD}
                             {--to= : Data de sfarsit inclusiv, format YYYY-MM-DD}
-                            {--family=* : PI, CN sau SCN; implicit toate trei}
+                            {--family=* : PI, CN, SCN sau ADV; implicit toate patru}
                             {--limit=0 : Maximum de anunturi per familie pentru test real limitat (0 = fara limita)}
-                            {--probe : O singura pagina de un element per familie, fara detalii sau import}
+                            {--probe : O pagina mica per familie (ADV: 5, restul: 1), fara detalii sau import}
                             {--report : Salveaza raportul JSON in storage/app/private}';
 
-    protected $description = 'Importa oportunitati SEAP: intentii, participare si proceduri simplificate';
+    protected $description = 'Importa oportunitati SEAP: PI, CN, SCN si ADV';
 
     public function handle(SeapImporter $importer): int
     {
@@ -29,7 +29,7 @@ class ScanSeapNotices extends Command
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', ...($from ? ['after_or_equal:from'] : [])],
             'limit' => ['integer', 'min:0', 'max:18'],
-            'families.*' => ['in:PI,CN,SCN'],
+            'families.*' => ['in:PI,CN,SCN,ADV'],
         ]);
         if ($validator->fails()) {
             $this->error($validator->errors()->first());

@@ -80,7 +80,7 @@ class NoticeSourceFilterTest extends TestCase
         $this->actingAs(User::factory()->create());
         $ids = [];
         foreach (['ADV', 'PI', 'CN', 'SCN'] as $family) {
-            $ids[$family] = Notice::factory()->create(['seap_metadata' => ['family' => $family, 'category' => 'opportunity']])->id;
+            $ids[$family] = Notice::factory()->create(['seap_metadata' => ['family' => $family, 'category' => 'opportunity', 'deadline_confirmed' => true, 'notice_state_id' => 2, 'opportunity_type_confirmed' => true]])->id;
         }
         $ted = Notice::factory()->create(['source' => 'ted']);
 
@@ -96,7 +96,7 @@ class NoticeSourceFilterTest extends TestCase
         $this->assertSame(['cpv' => '302', 'source' => 'ted'], $query);
         $this->get('/notices?source=ted')->assertViewHas('notices', fn ($rows) => $rows->modelKeys() === [$ted->id]);
         $this->getJson('/notices?family=DA')->assertUnprocessable()->assertJsonValidationErrors('family');
-        $this->get('/notices?source=seap&family=ADV')->assertSee('Importul ADV active nu este încă disponibil');
+        $this->get('/notices?source=seap&family=ADV')->assertSee('ADV sunt anunțuri de publicitate');
     }
 
     public function test_family_filter_keeps_unknown_deadlines_and_inactive_adv_out_of_active_list_but_preserves_saved_records(): void
@@ -105,7 +105,7 @@ class NoticeSourceFilterTest extends TestCase
         $this->withoutVite();
         $user = User::factory()->create();
         $this->actingAs($user);
-        $attributes = ['seap_metadata' => ['family' => 'ADV', 'category' => 'opportunity']];
+        $attributes = ['seap_metadata' => ['family' => 'ADV', 'category' => 'opportunity', 'deadline_confirmed' => true, 'notice_state_id' => 2, 'opportunity_type_confirmed' => true]];
         $active = Notice::factory()->create($attributes);
         $expired = Notice::factory()->create($attributes + ['submission_deadline' => now()->subMinute()]);
         Notice::factory()->create($attributes + ['submission_deadline' => null]);

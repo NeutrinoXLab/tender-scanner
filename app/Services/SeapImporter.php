@@ -23,7 +23,18 @@ class SeapImporter
             ? max(1, (int) config('services.seap.batch_size', 100)) : PHP_INT_MAX;
         $attempted = 0;
         $listingRequests = 0;
+        $requestedFrom = $from;
+        $requestedTo = $to;
         foreach ($families as $family) {
+            $range = $context->runId !== null ? (ScanRun::findOrFail($context->runId)->checkpoint['_ranges'][$family] ?? []) : [];
+            $from = $range['from'] ?? $requestedFrom;
+            $to = $range['to'] ?? $requestedTo;
+            $pageSize = $family === 'ADV' ? 100 : 18;
+            if ($probe) {
+                $pageSize = $family === 'ADV' ? 5 : 1;
+            } elseif ($limit > 0) {
+                $pageSize = $family === 'ADV' ? ($limit <= 5 ? 5 : ($limit <= 10 ? 10 : 25)) : min($limit, 18);
+            }
             $stats = ['reported' => 0, 'fetched' => 0, 'processed' => 0, 'new' => 0, 'updated' => 0,
                 'unchanged' => 0, 'duplicates' => 0, 'skipped' => 0, 'unprocessed' => 0, 'detail_errors' => 0, 'errors' => [], 'complete' => true,
                 'status' => 'running', 'from' => $from, 'to' => $to, 'listing_requests' => 0];
@@ -39,7 +50,7 @@ class SeapImporter
             if (isset($saved['stats'])) {
                 $stats = array_replace($stats, $saved['stats'], ['errors' => [], 'complete' => true, 'status' => 'running']);
             }
-            $refreshDay = $family !== 'PI' && ! $probe && $limit === 0 && $context->runId !== null
+            $refreshDay = in_array($family, ['CN', 'SCN'], true) && ! $probe && $limit === 0 && $context->runId !== null
                 ? (ScanRun::findOrFail($context->runId)->checkpoint['_refresh_day'] ?? null) : null;
             $stats['batch_attempted'] = 0;
             $stats['batch_listing_requests'] = 0;
@@ -82,7 +93,7 @@ class SeapImporter
                     if (in_array($start, $completedWindows, true)) {
                         continue;
                     }
-                    if (! $probe && $limit === 0 && $family !== 'PI' && $start !== null
+                    if (! $probe && $limit === 0 && in_array($family, ['CN', 'SCN'], true) && $start !== null
                         && $pending === []
                         && ! config('services.seap.fetch_procedure_details', false)
                         && substr($start, 0, 10) !== $refreshDay
@@ -110,8 +121,8 @@ class SeapImporter
                             $stats['batch_listing_requests']++;
                             $listingRequests++;
                             $data = $family === 'PI'
-                                ? $this->client->getOpenNotices($probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, null, $start, $end)
-                                : $this->client->getFamilyNotices($family, $probe ? 1 : ($limit > 0 ? min($limit, 18) : 18), $page, $start, $end);
+                                ? $this->client->getOpenNotices($pageSize, $page, null, $start, $end)
+                                : $this->client->getFamilyNotices($family, $pageSize, $page, $start, $end);
                             if ($page === 0) {
                                 $totals[$start ?? 'all'] = $data['total'];
                                 $stats['reported'] = array_sum($totals);
@@ -133,7 +144,7 @@ class SeapImporter
                         $unique = [];
                         foreach ($items as $item) {
                             $noticeType = $item['sysNoticeTypeId'] ?? data_get($item, 'sysNoticeType.id');
-                            if ($noticeType !== null && (int) $noticeType !== SeapClient::FAMILIES[$family]['type']) {
+                            if ($family !== 'ADV' && $noticeType !== null && (int) $noticeType !== SeapClient::FAMILIES[$family]['type']) {
                                 $stats['skipped']++;
                                 $this->error($stats, 'Tip diferit de familia solicitata returnat de SEAP; anuntul nu a fost importat.');
 
@@ -193,6 +204,10 @@ class SeapImporter
                                         $stats['detail_errors']++;
                                         $this->error($stats, $exception->getMessage());
                                     }
+                                } elseif ($family === 'ADV') {
+                                    if ($limit > 0 || config('services.seap.fetch_adv_details', false)) {
+                                        $payload = $this->client->getAdvNoticeDetails((int) $id);
+                                    }
                                 } elseif ($limit > 0 || config('services.seap.fetch_procedure_details', false)) {
                                     $details = $this->client->getProcedureDetails($family, [$item]);
                                     $payload = $details[$id]['data'] ?? [];
@@ -212,7 +227,8 @@ class SeapImporter
                                 }
                                 $externalId = $family === 'PI' ? $id : $family.':'.$id;
                                 $before = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
-                                $detailsRequested = $family === 'PI' || $limit > 0 || config('services.seap.fetch_procedure_details', false);
+                                $detailsRequested = $family === 'PI' || $limit > 0 || ($family === 'ADV'
+                                    ? config('services.seap.fetch_adv_details', false) : config('services.seap.fetch_procedure_details', false));
                                 $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => $detailsRequested && count($stats['errors']) === $itemErrors]);
                                 $after = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
                                 $recordOutcome($id, $notice->wasRecentlyCreated ? 'new' : ($before !== $after ? 'updated' : 'unchanged'));
@@ -238,13 +254,13 @@ class SeapImporter
                         $cursor = ['day' => $start, 'page' => $page, 'received' => $received, 'data' => null];
                         $save();
                         $stats['unprocessed'] = count($pending);
-                        $publish($family.' '.($start ?? 'toate datele').' pagina '.$page.' / '.(int) ceil($total / 18).' — procesate '.$stats['processed']);
+                        $publish($family.' '.($start ?? 'toate datele').' pagina '.$page.' / '.(int) ceil($total / $pageSize).' — procesate '.$stats['processed']);
                         if ($page >= 1000 && $received < $total) {
                             throw new RuntimeException('Limita de siguranta a paginarii SEAP a fost atinsa.');
                         }
                     } while ($received < $total);
                     if (! $probe && $limit === 0 && count($stats['errors']) === $windowErrors) {
-                        if ($family !== 'PI' && $start !== null) {
+                        if (in_array($family, ['CN', 'SCN'], true) && $start !== null) {
                             app(SeapBulkSync::class)->verifiedDay($family, substr($start, 0, 10));
                         }
                         $completedWindows[] = $start;

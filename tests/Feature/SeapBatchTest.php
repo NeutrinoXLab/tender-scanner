@@ -95,7 +95,7 @@ class SeapBatchTest extends TestCase
         $this->travel(61)->minutes();
         Http::swap(new Factory);
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PublicRFQInvitation/GetAll/' => Http::response(['total' => 5, 'items' => collect(range(1, 5))->map(fn ($id) => ['rfqInvitationId' => $id, 'title' => 'SCN '.$id])->all()]),
             '*ComboPub/*' => Http::response([]), '*NoticeCommon/*' => Http::response([]),
         ]);
@@ -126,7 +126,7 @@ class SeapBatchTest extends TestCase
         $this->travel(61)->minutes();
         Http::swap(new Factory);
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*ComboPub/*' => Http::response([]), '*NoticeCommon/*' => Http::response([]),
             '*PublicRFQInvitation/GetAll/' => Http::response(['total' => 1, 'items' => [['rfqInvitationId' => 1, 'title' => 'SCN']]]),
         ]);
@@ -134,7 +134,7 @@ class SeapBatchTest extends TestCase
         $this->assertSame($run->id, $finished->id);
         $this->assertSame('completed', $finished->status);
         $this->assertSame(4, $finished->counts('seap')['checked']);
-        Http::assertSentCount(9);
+        Http::assertSentCount(10);
     }
 
     public function test_configurable_batch_resumes_next_page_without_restarting_the_day(): void
@@ -148,7 +148,7 @@ class SeapBatchTest extends TestCase
         $this->travel(61)->minutes();
         Http::swap(new Factory);
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => function ($request) {
                 $this->assertSame(1, $request['pageIndex']);
 
@@ -179,7 +179,8 @@ class SeapBatchTest extends TestCase
         $run = ScanRun::latest('id')->firstOrFail();
         $this->assertSame('2026-09-15', $run->date_from);
         $this->assertSame('2026-09-17', $run->date_to);
-        $this->assertNull($run->checkpoint);
+        $this->assertSame(['PI', 'CN', 'SCN', 'ADV'], $run->checkpoint['_families']);
+        $this->assertSame('2026-09-16', $run->checkpoint['_ranges']['ADV']['from']);
     }
 
     public function test_existing_checkpoint_without_page_cursor_is_resumed_without_losing_completed_items(): void
@@ -195,7 +196,7 @@ class SeapBatchTest extends TestCase
         app(ScanContext::class)->record('seap', '1', $notice->id, true);
         app(ScanContext::class)->runId = null;
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => function ($request) {
                 $this->assertSame('2026-09-15T00:00:00+03:00', $request['publicationDateFrom']);
 
@@ -233,7 +234,7 @@ class SeapBatchTest extends TestCase
     {
         config(['services.seap.batch_size' => 2]);
         Http::preventStrayRequests();
-        Http::fake(['*/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]), '*/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
         $run = $this->tick();
         $this->assertSame('paused', $run->status);
         $this->assertCount(2, $run->checkpoint['PI']['windows']);

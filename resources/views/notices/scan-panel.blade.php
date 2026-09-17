@@ -13,7 +13,7 @@
             </div>
             <p class="text-xs text-gray-500 mb-2">Fără date: continuăm sincronizarea incompletă sau verificăm perioada nouă, inclusiv ultima zi sincronizată. SEAP procesează maximum {{ max(1, (int) config('services.seap.batch_size', 100)) }} anunțuri per lot; TED are import separat de această limită.</p>
             <button id="manual-scan-button" type="submit" name="mode" value="full" class="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Scanează acum</button>
-            <button id="manual-scan-probe" type="submit" name="mode" value="probe" class="border rounded-lg px-4 py-2 disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Testează PI/CN/SCN fără import</button>
+            <button id="manual-scan-probe" type="submit" name="mode" value="probe" class="border rounded-lg px-4 py-2 disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Testează PI/CN/SCN/ADV fără import</button>
             <button id="manual-scan-resume" type="submit" name="resume_id" value="{{ $latestScan?->id }}" class="border rounded-lg px-4 py-2" @if (!($scanSummary['can_resume'] ?? false)) hidden @endif>Continuă scanarea</button>
         </form>
     </div>

@@ -39,6 +39,7 @@ class SeapImportTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->fakeDetails();
         Http::fake([
+            '*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             'https://e-licitatie.ro/api-pub/PUBLICPINotice/GetAll/' => Http::response(['total' => 1, 'items' => [['piNoticeId' => 100, 'title' => 'Intentie']]]),
             'https://e-licitatie.ro/api-pub/PUBLICCNotice/GetAll/' => Http::response(['total' => 1, 'items' => [['cNoticeID' => 100, 'contractTitle' => 'Participare']]]),
             'https://e-licitatie.ro/api-pub/PublicRFQInvitation/GetAll/' => Http::response(['total' => 1, 'items' => [['rfqInvitationId' => 100, 'title' => 'Simplificat']]]),

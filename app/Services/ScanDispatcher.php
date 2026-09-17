@@ -6,6 +6,7 @@ use App\Jobs\RunManualScan;
 use App\Models\Notice;
 use App\Models\ScanRun;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -47,14 +48,33 @@ class ScanDispatcher
                     return $recent;
                 }
             }
-            $lastComplete = ScanRun::where('mode', 'full')->where('results->seap->status', 'completed')
-                ->orderByDesc('date_to')->get()->first(fn (ScanRun $run): bool => $run->seapComplete());
             $today = CarbonImmutable::now('Europe/Bucharest');
-            $from = $lastComplete ? CarbonImmutable::parse($lastComplete->date_to)->min($today)->toDateString() : $today->subDays(30)->toDateString();
+            $ranges = [];
+            foreach (array_keys(SeapClient::FAMILIES) as $family) {
+                $lastDay = ScanRun::where('mode', 'full')->where('results->seap->families->'.$family.'->complete', true)
+                    ->where('status', '!=', 'cancelled')
+                    ->where(fn (Builder $query) => $query->where('results->seap->families->'.$family.'->status', 'completed')
+                        ->orWhere(fn (Builder $legacy) => $legacy->where('status', 'completed')->where('results->seap->status', 'completed')))
+                    ->max('date_to');
+                $from = $lastDay ? CarbonImmutable::parse($lastDay)->min($today)->toDateString() : $today->subDay()->toDateString();
+                $ranges[$family] = ['from' => $options['from'] ?? $from, 'to' => $options['to'] ?? $today->toDateString()];
+            }
             $verificationDay = $mode === 'full' ? app(SeapBulkSync::class)->verificationDay() : null;
+            $checkpoint = ['_families' => array_keys(SeapClient::FAMILIES), '_ranges' => $ranges];
+            if ($verificationDay !== null) {
+                $checkpoint['_refresh_day'] = $verificationDay;
+            }
+            $runFrom = min(array_column($ranges, 'from'));
+            if (! $seapOnly) {
+                $lastComplete = ScanRun::where('mode', 'full')->where('results->seap->status', 'completed')
+                    ->orderByDesc('date_to')->get()->first(fn (ScanRun $run): bool => $run->seapComplete());
+                $tedFrom = $options['from'] ?? ($lastComplete ? CarbonImmutable::parse($lastComplete->date_to)->min($today)->toDateString() : $today->subDays(30)->toDateString());
+                $checkpoint['_ted_from'] = $tedFrom;
+                $runFrom = min($runFrom, $tedFrom);
+            }
             $run = ScanRun::create(['status' => 'queued', 'active_key' => 'manual', 'mode' => $mode,
-                'date_from' => $options['from'] ?? $from, 'date_to' => $options['to'] ?? $today->toDateString(),
-                'checkpoint' => $verificationDay !== null ? ['_refresh_day' => $verificationDay] : null,
+                'date_from' => $runFrom, 'date_to' => $options['to'] ?? $today->toDateString(),
+                'checkpoint' => $checkpoint,
                 'before_notice_id' => Notice::max('id') ?? 0]);
             RunManualScan::dispatch($run->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
 

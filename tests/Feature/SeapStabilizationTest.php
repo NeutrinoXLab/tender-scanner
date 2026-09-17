@@ -28,7 +28,7 @@ class SeapStabilizationTest extends TestCase
     private function fakeApi(string $title = 'Achizitie', int $total = 1000): void
     {
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => Http::response(['total' => $total, 'items' => [['piNoticeId' => 11, 'title' => $title]]]),
             '*PUBLICCNotice/GetAll/' => Http::response(['total' => $total, 'items' => [['cNoticeID' => 11, 'contractTitle' => $title, 'sysNoticeTypeId' => 2, 'sysAcquisitionContractType' => ['id' => 1, 'text' => 'Furnizare']]]]),
             '*PublicRFQInvitation/GetAll/' => Http::response(['total' => $total, 'items' => [['rfqInvitationId' => 11, 'contractTitle' => $title, 'sysNoticeType' => ['id' => 17], 'sysAcquisitionContractType' => ['id' => 2, 'text' => 'Servicii']]]]),
@@ -57,7 +57,7 @@ class SeapStabilizationTest extends TestCase
         $first = $this->dispatch($data);
         $this->assertSame('tested', $first->status);
         $this->assertSame(3, $first->counts()['new']);
-        Http::assertSentCount(12);
+        Http::assertSentCount(13);
         foreach (['PI', 'CN', 'SCN'] as $family) {
             $this->assertSame(1, $first->results['seap']['families'][$family]['processed']);
             $this->assertFalse($first->results['seap']['families'][$family]['complete']);
@@ -98,7 +98,7 @@ class SeapStabilizationTest extends TestCase
         $this->mock(TedClient::class, fn ($mock) => $mock->shouldReceive('search')->once()->andReturn(['totalNoticeCount' => 0, 'notices' => []]));
         Http::preventStrayRequests();
         $lists = 0;
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => function () use (&$lists) {
                 $lists++;
 
@@ -116,7 +116,7 @@ class SeapStabilizationTest extends TestCase
         $this->assertTrue($run->fresh()->summary()['can_resume']);
         Http::swap(new Factory);
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => Http::response(['total' => 1, 'items' => [['piNoticeId' => 2, 'title' => 'PI 2']]]),
             '*PUBLICPINotice/getView/2' => Http::response([]),
             '*PUBLICCNotice/GetAll/' => Http::response(['total' => 0, 'items' => []]),
@@ -129,7 +129,7 @@ class SeapStabilizationTest extends TestCase
         $this->assertSame(2, $resumed->results['seap']['families']['PI']['processed']);
         $this->assertSame(2, $resumed->results['seap']['families']['PI']['reported']);
         $this->assertSame(0, $resumed->results['seap']['families']['PI']['unprocessed']);
-        Http::assertSentCount(5);
+        Http::assertSentCount(7);
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'getView/1')
             || (str_contains($request->url(), 'PUBLICPINotice/GetAll') && str_starts_with($request['publicationDateFrom'], '2026-09-09')));
     }
@@ -159,7 +159,7 @@ class SeapStabilizationTest extends TestCase
                 'submission_deadline' => now()->addMonth()]);
         }
         Http::preventStrayRequests();
-        Http::fake(['*/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]), '*/GetAll/' => Http::response(['total' => 0, 'items' => []])]);
         $this->mock(TedClient::class, fn ($mock) => $mock->shouldReceive('search')->once()->andReturn(['totalNoticeCount' => 0, 'notices' => []]));
         $run = $this->dispatch([]);
         $this->assertSame('completed', $run->status);
@@ -171,13 +171,13 @@ class SeapStabilizationTest extends TestCase
                 && $request['publicationDateTo'] === '2026-09-11T23:59:59+03:00');
         }
         $this->getJson('/scans/latest')->assertJsonPath('results.seap.families.SCN.refresh_day', null);
-        Http::assertNotSent(fn ($request) => str_starts_with($request['publicationDateFrom'], '2026-08'));
+        Http::assertNotSent(fn ($request) => str_starts_with($request['publicationDateFrom'] ?? $request['publicationDateStart'] ?? '', '2026-08'));
     }
 
     public function test_sample_never_exceeds_limit_even_when_server_ignores_page_size(): void
     {
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => Http::response(['total' => 2, 'items' => [
                 ['piNoticeId' => 1, 'title' => 'Unu'], ['piNoticeId' => 2, 'title' => 'Doi'],
             ]]),
@@ -193,7 +193,7 @@ class SeapStabilizationTest extends TestCase
     public function test_sample_stops_after_one_page_even_if_all_rows_are_duplicates(): void
     {
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => Http::response(['total' => 1000, 'items' => [
                 ['piNoticeId' => 1, 'title' => 'Unu'], ['piNoticeId' => 1, 'title' => 'Unu'],
             ]]),
@@ -210,7 +210,7 @@ class SeapStabilizationTest extends TestCase
     {
         $existing = Notice::factory()->create(['seap_id' => '1', 'title' => 'Pastrat']);
         Http::preventStrayRequests();
-        Http::fake([
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]),
             '*PUBLICPINotice/GetAll/' => Http::response(['total' => 1, 'items' => [['piNoticeId' => 1, 'title' => 'Alt tip']]]),
             '*PUBLICPINotice/getView/1' => Http::response(['sectionGeneral' => ['sysAcquisitionContractType' => ['id' => 99]]]),
         ]);
@@ -224,7 +224,7 @@ class SeapStabilizationTest extends TestCase
     public function test_wrong_notice_family_is_rejected_before_detail_requests(): void
     {
         Http::preventStrayRequests();
-        Http::fake(['*PUBLICCNotice/GetAll/' => Http::response(['total' => 1, 'items' => [['cNoticeID' => 12, 'sysNoticeTypeId' => 3]]])]);
+        Http::fake(['*AdvNoticeCommon/GetAdvNoticeList/' => Http::response(['total' => 0, 'items' => []]), '*PUBLICCNotice/GetAll/' => Http::response(['total' => 1, 'items' => [['cNoticeID' => 12, 'sysNoticeTypeId' => 3]]])]);
         $report = app(SeapImporter::class)->scan(null, null, ['CN'], fn () => null)['CN'];
         $this->assertFalse($report['complete']);
         $this->assertSame(1, $report['skipped']);
