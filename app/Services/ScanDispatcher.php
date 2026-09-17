@@ -37,7 +37,7 @@ class ScanDispatcher
                     return $resume;
                 }
                 $resume->update(['status' => 'queued', 'active_key' => 'manual', 'finished_at' => null, 'message' => 'Continuare de la checkpoint-ul salvat.']);
-                RunManualScan::dispatch($resume->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
+                $this->queue($resume, $seapOnly);
 
                 return $resume;
             }
@@ -76,9 +76,20 @@ class ScanDispatcher
                 'date_from' => $runFrom, 'date_to' => $options['to'] ?? $today->toDateString(),
                 'checkpoint' => $checkpoint,
                 'before_notice_id' => Notice::max('id') ?? 0]);
-            RunManualScan::dispatch($run->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
+            $this->queue($run, $seapOnly);
 
             return $run;
         }, 5));
+    }
+
+    private function queue(ScanRun $run, bool $seapOnly): void
+    {
+        if (config('services.seap_worker.server')) {
+            $run->update(['checkpoint' => array_replace($run->checkpoint ?? [], ['_worker_ready' => $seapOnly])]);
+            if ($seapOnly) {
+                return;
+            }
+        }
+        RunManualScan::dispatch($run->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
     }
 }

@@ -1,6 +1,13 @@
 <?php
 
 return [
+    'seap_worker' => [
+        'server' => (bool) env('SEAP_WORKER_SERVER', false),
+        'url' => env('SEAP_WORKER_URL'),
+        'token' => env('SEAP_WORKER_TOKEN'),
+        'max_bytes' => (int) env('SEAP_WORKER_MAX_BYTES', 2097152),
+        'request_limit' => (int) env('SEAP_WORKER_REQUEST_LIMIT', 20),
+    ],
 
     'price_scanner' => [
         'search_url' => env('PRICE_SCANNER_SEARCH_URL'),

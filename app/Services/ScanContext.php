@@ -48,7 +48,8 @@ class ScanContext
             return;
         }
         if (str_contains($message, 'SQLSTATE')) {
-            Log::warning('Eroare la import', ['scan_id' => $this->runId, 'message' => $message]);
+            Log::warning('Eroare la import', config('services.seap_worker.server')
+                ? ['scan_id' => $this->runId] : ['scan_id' => $this->runId, 'message' => $message]);
             $message = str_contains($message, 'locked')
                 ? 'Baza locală a fost ocupată temporar. Reluați scanarea pentru anunțurile omise.'
                 : 'Un anunț nu a putut fi salvat. Celelalte date au fost păstrate; detaliile sunt în jurnalul aplicației.';

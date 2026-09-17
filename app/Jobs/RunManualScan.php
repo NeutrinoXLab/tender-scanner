@@ -38,6 +38,11 @@ class RunManualScan implements ShouldQueue
         $expected = $probe ? 'probe_ok' : ($sample ? 'sample_ok' : 'completed');
         try {
             foreach (['ted', 'seap'] as $source) {
+                if ($source === 'seap' && config('services.seap_worker.server')) {
+                    $results['seap'] = $previous['seap'] ?? ['status' => 'paused', 'families' => [], 'errors' => []];
+
+                    continue;
+                }
                 if (($limited || ($this->seapOnly ?? false)) && $source === 'ted') {
                     $results['ted'] = $previous['ted'] ?? ['status' => 'not_run', 'errors' => []];
 
@@ -103,6 +108,12 @@ class RunManualScan implements ShouldQueue
                     $status = 'paused';
                     $message = 'Lot SEAP încheiat. Sincronizarea continuă de la checkpoint la următoarea rulare programată.';
                 }
+            }
+            if (config('services.seap_worker.server')) {
+                $checkpoint['_worker_ready'] = true;
+                $status = 'paused';
+                $message = 'SEAP așteaptă workerul autorizat; serverul nu apelează SEAP.';
+                unset($checkpoint['_next_batch_at']);
             }
             if ($sample) {
                 $message = 'Test real limitat: maximum un anunț per familie, cu detalii și import. TED nu este apelat; catalogul nu a fost sincronizat complet.';

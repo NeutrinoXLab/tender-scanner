@@ -476,3 +476,96 @@ tests/Feature/SeapStabilizationTest.php
 Fișier nou: `tests/Feature/AdvDeltaTest.php` (21 cazuri de test, incluzând variantele parametrizate).
 
 Stare finală: `master`, ahead 2 față de `origin/master` (commituri preexistente), 23 fișiere modificate și unul nou, nimic staged. Fără commit, push, deployment, scanare completă live sau modificări KabyNode. Mesaj propus: `Add verified ADV daily delta with resumable SEAP checkpoints`.
+
+## Remote SEAP Worker
+
+KabyNode rămâne aplicația centrală; laptopul execută numai cererile HTTP SEAP emise de server, dintr-o rețea cu acces legitim. Mecanismul **nu ocolește restricțiile SEAP**: fără proxy/VPN, rotire de IP, spoofing sau bypass. La 403/429, workerul se oprește.
+
+~~~text
+Server: checkpoint → operație SEAP precisă + UUID
+                    ↓ HTTPS / token dedicat
+Laptop: SeapClient → răspuns salvat local
+                    ↓ HTTPS / același UUID
+Server: SeapImporter → SeapNormalizer → NoticeIngestor
+        Notice + revisions + checkpoint + confirmare atomică
+~~~
+
+Nu există alt algoritm de scanare pe laptop. SeapWorkerClient suspendă importatorul central înaintea accesului HTTP; răspunsul workerului permite continuarea aceleiași logici. Checkpoint-ul autoritar rămâne în scan_runs. Laptopul nu importă Notice în propria bază și nu primește acreditările bazei centrale.
+
+Migrarea nouă **2026_09_17_083837_create_seap_worker_batches_table** adaugă doar tabelul seap_worker_batches: cerere, UUID, hash și confirmare. O cheie unică permite o singură cerere neconfirmată. Importul și confirmarea sunt în aceeași tranzacție. Același UUID/conținut întoarce confirmarea precedentă, fără reimport; alt conținut produce 409. Reinstalarea laptopului nu pierde checkpoint-ul. Răspunsurile care existau exclusiv pe discul pierdut trebuie recitite de la SEAP.
+
+Un transfer conține o pagină de maximum 100 ADV / 18 PI/CN/SCN sau detaliul unui singur anunț. Serverul aplică cumulativ SEAP_BATCH_SIZE (maximum 100 în modul remote) și pauza SEAP_BATCH_INTERVAL_MINUTES; fiecare POST nu resetează limita. Pagina rămasă este păstrată central. Configurația de completare și dimensiune este fixată pentru lotul în curs, apoi reîncărcată după pauză. Detaliile CN/SCN/ADV sunt implicit oprite; un detaliu CN/SCN activat explicit poate însemna patru cereri SEAP.
+
+API privat, exclusiv HTTPS și token Bearer dedicat:
+- GET /api/seap-worker/ping — verifică autentificarea, fără scanare.
+- POST /api/seap-worker/claim — emite/reemite operația; 204 dacă momentan nu există lucru disponibil.
+- POST /api/seap-worker/batches/{uuid} — validează anvelopa și familia operației emise. Nu acceptă patch-uri Notice sau checkpoint-uri de la client.
+
+Tokenul are minimum 32 caractere și este separat de loginul web. API-ul este limitat la 120 cereri/minut/IP autentificat și implicit 2 MiB per upload. Clientul nu urmează redirecturi. Erorile interne sunt generice; logurile remote nu includ mesaje SQL cu payload. Tokenul nu intră în URL, payload sau fișierul de retransmitere. Workerul este o componentă de încredere, autorizată numai să furnizeze răspunsurile solicitate. TED și supplier_history nu sunt transferate prin acest protocol.
+
+### Configurare și comenzi ulterioare
+
+Generează un secret aleator, păstrează-l privat și completează aceeași valoare în ambele .env; nu îl comite:
+
+~~~sh
+php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+~~~
+
+Pe **server**, după instalarea ulterioară a codului:
+
+~~~dotenv
+SEAP_WORKER_SERVER=true
+SEAP_WORKER_TOKEN=
+SEAP_WORKER_MAX_BYTES=2097152
+SEAP_BATCH_SIZE=100
+SEAP_BATCH_INTERVAL_MINUTES=60
+SEAP_FETCH_PROCEDURE_DETAILS=false
+SEAP_FETCH_ADV_DETAILS=false
+~~~
+
+Completează tokenul. Modul server blochează accesul SEAP direct inclusiv din comenzile de diagnostic. Butonul manual execută TED în workerul central existent, apoi așteaptă laptopul; testele SEAP probe/sample din browser sunt respinse cu explicație. seap:tick poate continua să pregătească progresul fără acces SEAP. Nu programa seap:worker pe KabyNode. Bulk și TED rămân independente.
+
+Comenzi **pentru o instalare ulterioară autorizată**, neexecutate în această etapă:
+
+~~~sh
+cd /home/ikasiypk/tender-scanner
+php artisan migrate --force --no-interaction
+php artisan config:cache
+php artisan queue:restart
+php artisan route:list --path=api/seap-worker --no-interaction
+~~~
+
+HTTPS trebuie recunoscut corect de hosting; nu se acceptă antete de proxy de la orice client. Limitele PHP/webserver trebuie să permită corpul configurat. Folosește tabele tranzacționale; backupul central include scan_runs și noul tabel.
+
+Pe **laptop**, în .env local:
+
+~~~dotenv
+SEAP_WORKER_SERVER=false
+SEAP_WORKER_URL=https://seap.novelions.ro
+SEAP_WORKER_TOKEN=
+SEAP_WORKER_MAX_BYTES=2097152
+SEAP_WORKER_REQUEST_LIMIT=20
+SEAP_REQUEST_DELAY_MS=1000
+CACHE_STORE=file
+~~~
+
+Completează același token. Cu cache pe fișiere, comanda nu necesită migrarea bazei locale.
+
+~~~powershell
+Set-Location C:\laragon\www\seap-scanner
+php artisan config:clear
+php artisan seap:worker --check --no-interaction
+php artisan seap:worker --no-interaction
+~~~
+
+--check nu accesează SEAP. Invocarea normală se oprește după maximum 20 operații (configurabil 1–100), la lipsa lucrului sau la eroare. Rulează un singur worker, inițial manual; ulterior poate fi invocat conservator prin Task Scheduler. Laptopul trebuie să fie pornit și conectat. Workerul central existent rămâne necesar pentru TED inițiat din UI.
+
+### Erori și retransmitere
+
+Răspunsul este salvat atomic în storage/app/private/seap-worker/, separat pe URL-ul serverului, înaintea uploadului. La server indisponibil, upload eșuat sau confirmare pierdută, următoarea invocare retransmite întâi fișierul, fără altă citire SEAP. Fișierul se șterge numai după confirmarea validă. Nu șterge această zonă pentru a „debloca” 409/422/413; verifică lotul/configurația. Sunt necesare spațiu și acces exclusiv de scriere.
+
+La 403/429 SEAP, workerul transmite starea curată de eroare și se oprește cu exit code nenul. Serverul păstrează cursorul și impune pauza înaintea unei noi încercări. Nu există retry automat al uploadului în aceeași invocare. Retry-urile limitate SEAP pentru timeout/5xx rămân cele existente; 403/429 nu sunt reîncercate. Istoricul, deduplicarea și datele personale sunt păstrate.
+
+Implementarea a fost verificată cu răspunsuri simulate și baze de test, fără acces live la SEAP/KabyNode. Verificarea integrării reale prin --check și un lot mic se va face numai după deploymentul autorizat separat. Nu este necesar un build frontend: această etapă nu modifică frontendul.
+
+Verificare finală remote worker: 24 teste noi / 279 aserțiuni; suita completă 232 teste / 1.578 aserțiuni, toate trecute. Pint și git diff --check au trecut. Nu s-a modificat frontendul și nu s-a făcut build inutil.

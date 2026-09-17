@@ -198,7 +198,7 @@ class SeapImporter
                                 if ($family === 'PI') {
                                     try {
                                         $payload = $this->client->getNoticeDetails((int) $id);
-                                    } catch (SeapAccessRestricted $exception) {
+                                    } catch (SeapAccessRestricted|SeapRequestPending $exception) {
                                         throw $exception;
                                     } catch (Throwable $exception) {
                                         $stats['detail_errors']++;
@@ -237,6 +237,10 @@ class SeapImporter
                                 }
                                 $save();
                                 $publish($family.' '.$id.' — procesat');
+                            } catch (SeapRequestPending $exception) {
+                                $attempted--;
+                                $stats['batch_attempted']--;
+                                throw $exception;
                             } catch (SeapAccessRestricted $exception) {
                                 throw $exception;
                             } catch (Throwable $exception) {
@@ -267,6 +271,12 @@ class SeapImporter
                         $cursor = null;
                         $save();
                     }
+                }
+            } catch (SeapRequestPending $exception) {
+                $paused = true;
+                if ($exception->listing) {
+                    $stats['listing_requests']--;
+                    $stats['batch_listing_requests']--;
                 }
             } catch (Throwable $exception) {
                 $this->error($stats, $exception->getMessage());

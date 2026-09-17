@@ -49,6 +49,12 @@ class SeapClient
             $request->withHeaders(['Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/']);
         }
         $data = $this->json($request->post($this->baseUrl.'/'.$config['api'].'/'.$method.'/', $payload));
+
+        return $this->listingData($data);
+    }
+
+    protected function listingData(array $data): array
+    {
         if (! isset($data['total'], $data['items']) || ! is_int($data['total']) || $data['total'] < 0 || ! is_array($data['items']) || ! array_is_list($data['items'])) {
             throw new RuntimeException('Raspuns de listare SEAP invalid.');
         }
@@ -106,6 +112,10 @@ class SeapClient
 
     private function request(?PendingRequest $request = null): PendingRequest
     {
+        if (config('services.seap_worker.server')) {
+            throw new RuntimeException('SEAP live este dezactivat pe server; folosiți workerul autorizat.');
+        }
+
         return ($request ?? Http::withOptions([]))->connectTimeout(10)->timeout(30)
             ->beforeSending(function (): void {
                 Sleep::usleep(max(0, (int) config('services.seap.request_delay_ms', 1000)) * 1000);

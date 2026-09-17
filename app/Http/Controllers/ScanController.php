@@ -7,11 +7,15 @@ use App\Services\ScanDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ScanController extends Controller
 {
     public function store(Request $request): JsonResponse|RedirectResponse
     {
+        if (config('services.seap_worker.server') && in_array($request->input('mode'), ['probe', 'sample'], true)) {
+            throw ValidationException::withMessages(['mode' => 'Testele SEAP live se execută numai pe workerul autorizat.']);
+        }
         $validated = $request->validate([
             'resume_id' => ['nullable', 'integer', 'exists:scan_runs,id'],
             'mode' => ['sometimes', 'string', 'in:full,probe,sample'],
