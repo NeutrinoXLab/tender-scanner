@@ -1,31 +1,22 @@
-<!DOCTYPE html>
-<html lang="ro">
-<head>
-    <meta charset="UTF-8"><meta name="robots" content="noindex, nofollow">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Tender Scanner — Licitații</title>
-
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-</head>
-
-<body class="bg-gray-100">
-    <x-navigation />
-
-    <div class="max-w-7xl mx-auto px-4 py-8">
+@extends('layouts.private')
+@section('title', 'Licitații — Tender Scanner')
+@section('content')
 
         {{-- Header --}}
-        <div class="mb-6">
+        <header class="page-heading"><div>
             <h1 class="text-2xl font-bold text-gray-900">
-                Tender Scanner — Licitații
+                Licitații
             </h1>
 
             <p class="text-gray-600 mt-1">
-                {{ $notices->total() }} anunțuri în baza locală
+                {{ $notices->total() }} anunțuri corespund selecției tale
             </p>
-        </div>
+        </div></header>
 
-        @include('notices.scan-panel')
+        <details class="surface mb-6" @if($latestScan && in_array($latestScan->status, ['queued', 'running'])) open @endif>
+            <summary class="font-semibold text-sm text-blue-700">Sincronizare SEAP + TED · comenzi și progres</summary>
+            <div class="mt-4">@include('notices.scan-panel')</div>
+        </details>
 
         <nav class="flex flex-wrap items-center gap-2 mb-4" aria-label="Filtrare după sursă">
             <span class="text-sm font-semibold text-gray-700 mr-2">Sursă</span>
@@ -48,7 +39,7 @@
         @endif
 
         {{-- Panou filtre --}}
-        <div class="bg-white border rounded-xl p-5 mb-6">
+        <div class="filter-panel bg-white border rounded-xl p-5 mb-6">
 
             <form
                 method="GET"
@@ -58,6 +49,7 @@
                 {{-- Căutare generală --}}
                 @if ($source)<input type="hidden" name="source" value="{{ $source }}">@endif
                 <input type="hidden" name="collection" value="{{ $collection }}">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6">
                 @if ($source !== 'ted')
                     <div class="mb-4">
                         <label for="family-filter" class="block text-sm font-medium text-gray-700 mb-1">Tip SEAP</label>
@@ -82,6 +74,7 @@
                         @endforeach
                     </select>
                 </div>
+                </div>
                 <label class="block text-sm text-gray-700 mb-4">
                     <input type="checkbox" name="seap_history" value="1" @checked(request()->boolean('seap_history'))>
                     Include istoricul SEAP și procedurile fără termen de participare confirmat
@@ -104,7 +97,7 @@
                     >
                 </div>
 
-                {{-- Filtre --}}
+                <details class="filter-disclosure" @if($county || $cpv || $minValue !== null || $maxValue !== null || $deadlineFrom || $deadlineTo || $status || $contractType || $procedureType || $assignmentType || $euFunded !== null || $fundingProgram) open @endif><summary>Filtre avansate · locație, valoare, termen și procedură</summary>
                 <div class="border-t pt-5">
 
                     <div class="mb-3">
@@ -364,7 +357,7 @@
                     </div>
                 </div>
 
-                {{-- Butoane --}}
+                </details><!-- Filter actions -->
                 <div class="border-t mt-5 pt-5 flex flex-col sm:flex-row gap-3">
 
                     <button
@@ -410,45 +403,26 @@
 
             @forelse ($notices as $notice)
 
-                <article class="bg-white border rounded-lg p-5">
-
-                    <div class="flex flex-col gap-2">
-
-                        {{-- Număr și status --}}
-                        <p class="text-xs text-gray-600">
-                            {{ $notice->personalEntries->first()?->is_saved ? '⭐ Salvată · ' : ($notice->personalEntries->first()?->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personalEntries->first()?->personal_status] ?? 'Nouă' }}
-                        </p>
-                        <div class="flex flex-wrap items-center gap-2">
-
-                            <span class="font-semibold text-gray-900">
-                                {{ $notice->notice_number }}
-                            </span>
-
-                                                    <span class="text-sm text-gray-600">Sursă: {{ $notice->source === 'seap' ? 'SEAP' : 'TED' }}{{ $notice->source === 'seap' && $notice->ted_id ? ' + TED' : '' }}</span>
-                        @if ($notice->ted_url)
-                            <a href="{{ $notice->ted_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">Vezi anunțul pe TED</a>
+                <article class="notice-card">
+                    <div class="notice-meta">
+                        <span class="source-badge {{ $notice->source === 'ted' ? 'ted' : '' }}">Sursă: {{ strtoupper($notice->source ?? 'seap') }}</span>
+                        @if($notice->source === 'seap' && data_get($notice->seap_metadata, 'family'))
+                            <span class="source-badge">{{ data_get($notice->seap_metadata, 'family') }}</span>
                         @endif
-                        @if ($notice->notice_type && $notice->source === 'seap')
-                            <span class="text-sm text-gray-600">{{ $notice->notice_type }}</span>
-                        @endif
-@if ($notice->status)
-                                <span class="text-sm text-gray-600">
-                                    {{ $notice->status }}
-                                </span>
-                            @endif
-
-                        </div>
-
-                        {{-- Titlu --}}
-                        <h2 class="text-lg font-semibold text-gray-900">
-                            <a
-                                href="{{ route('notices.show', $notice) }}"
-                                class="hover:text-blue-600"
-                            >
-                                {{ $notice->title }}
-                            </a>
-                        </h2>
-
+                        <span>{{ $notice->notice_number }}</span>
+                        @if($notice->notice_type && $notice->source === 'seap')<span>{{ $notice->notice_type }}</span>@endif
+                        @if($notice->status)<span>· {{ $notice->status }}</span>@endif
+                        @if($notice->source === 'seap' && $notice->ted_id)<span>+ TED</span>@endif
+                    </div>
+                    <h2 class="notice-title"><a href="{{ route('notices.show', $notice) }}">{{ $notice->title }}</a></h2>
+                    <p class="text-sm text-gray-600">{{ $notice->authority_name ?? 'Autoritate indisponibilă' }}</p>
+                    <dl class="notice-facts">
+                        <div class="deadline-box"><dt>Termen de depunere</dt><dd>{{ $notice->submission_deadline?->format('d.m.Y H:i') ?? 'Necomunicat' }}</dd></div>
+                        <div><dt>Valoare estimată</dt><dd>{{ $notice->estimated_value !== null ? number_format((float) $notice->estimated_value, 2, ',', '.') : '—' }} {{ $notice->currency ?? '' }}</dd></div>
+                        <div><dt>Publicat</dt><dd>{{ $notice->publication_date?->format('d.m.Y H:i') ?? '—' }}</dd></div>
+                    </dl>
+                    <p class="muted mb-3">Județ: {{ $notice->county ?? '—' }} · CPV: {{ $notice->cpv_code ?? '—' }}</p>
+                    <details class="mb-4"><summary class="text-sm text-blue-700">Sumar și descriere</summary>
                         <section class="text-sm text-gray-700 border-t pt-3 mt-2" aria-label="Sumar anunț">
                             <h3 class="font-semibold mb-2">Sumar anunț</h3>
                             @php($summaryItems = $notice->summaryItems())
@@ -469,58 +443,22 @@
                                 <p class="text-xs text-gray-500 mt-2">Extras din anunțul {{ strtoupper($notice->source ?? 'seap') }}.</p>
                             @endif
                         </section>
-                        {{-- Link detalii --}}
-                        <a
-                            href="{{ route('notices.show', $notice) }}"
-                            class="text-sm text-blue-600 hover:underline"
-                        >
-                            Vezi detalii →
-                        </a>
-
-                        {{-- Informații --}}
-                        <div class="text-sm text-gray-600 space-y-1">
-
-                            <div>
-                                <strong>Autoritate:</strong>
-                                {{ $notice->authority_name ?? '—' }}
-                            </div>
-
-                            <div>
-                                <strong>Județ:</strong>
-                                {{ $notice->county ?? '—' }}
-                            </div>
-
-                            <div>
-                                <strong>CPV:</strong>
-                                {{ $notice->cpv_code ?? '—' }}
-                            </div>
-
-                            <div>
-                                <strong>Valoare:</strong>
-                                {{ $notice->estimated_value ?? '—' }}
-                                {{ $notice->currency ?? '' }}
-                            </div>
-
-                            <div>
-                                <strong>Publicat:</strong>
-                                {{ $notice->publication_date?->format('d.m.Y H:i') ?? '—' }}
-                            </div>
-
-                            <div>
-                                <strong>Termen:</strong>
-                                {{ $notice->submission_deadline?->format('d.m.Y H:i') ?? '—' }}
-                            </div>
-
+                    </details>
+                    <div class="notice-footer">
+                        <p class="text-xs text-gray-600">{{ $notice->personalEntries->first()?->is_saved ? '⭐ Salvată · ' : ($notice->personalEntries->first()?->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personalEntries->first()?->personal_status] ?? 'Nouă' }}</p>
+                        <div class="flex flex-wrap gap-4 items-center">
+                            @if($notice->ted_url)<a href="{{ $notice->ted_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">Vezi anunțul pe TED</a>@endif
+                            <a href="{{ route('notices.show', $notice) }}" class="primary-link">Vezi detalii →</a>
                         </div>
-
                     </div>
-
                 </article>
 
             @empty
 
-                <div class="bg-white border rounded-lg p-6 text-gray-600">
-                    Nu există anunțuri care să corespundă criteriilor.
+                <div class="surface empty-state">
+                    <h2 class="font-semibold mb-2">Niciun rezultat pentru această selecție</h2>
+                    <p>Nu există anunțuri care să corespundă criteriilor.</p>
+                    <a class="inline-block mt-4 text-blue-700" href="{{ route('notices.index') }}">Resetează filtrele →</a>
                 </div>
 
             @endforelse
@@ -531,8 +469,4 @@
         <div class="mt-6">
             {{ $notices->links() }}
         </div>
-
-    </div>
-
-</body>
-</html>
+@endsection

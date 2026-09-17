@@ -7,11 +7,11 @@
     <title>@yield('title', 'Tender Scanner')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="bg-gray-100 text-gray-900">
+<body class="app-shell @guest guest-shell @endguest">
     <x-navigation />
-    <main class="max-w-5xl mx-auto px-4 py-8">
+    <main id="main-content" class="app-main" tabindex="-1">
         @if(session('message'))<p role="status" class="mb-4 rounded-lg bg-green-50 p-4 text-green-800">{{ session('message') }}</p>@endif
-        @if($errors->any())
+        @if($errors->any() && !request()->routeIs('notices.*'))
             <div role="alert" class="mb-4 rounded-lg bg-red-50 p-4 text-red-700">
                 @foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach
             </div>

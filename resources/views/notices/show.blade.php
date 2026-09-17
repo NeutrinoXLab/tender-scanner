@@ -1,16 +1,6 @@
-<!DOCTYPE html>
-<html lang="ro">
-<head>
-    <meta charset="UTF-8"><meta name="robots" content="noindex, nofollow">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $notice->notice_number }} - Tender Scanner</title>
-
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
-</head>
-
-<body class="bg-gray-100">
-    <x-navigation />
-    <div class="max-w-5xl mx-auto px-4 py-8">
+@extends('layouts.private')
+@section('title', $notice->notice_number . " — Tender Scanner")
+@section('content')
 
         <div class="mb-6">
             <a
@@ -46,6 +36,11 @@
                 {{ $notice->title }}
             </h1>
 
+            <div class="detail-overview">
+                <div class="deadline-box"><strong>Termen de depunere</strong>{{ $notice->submission_deadline?->format('d.m.Y H:i') ?? 'Necomunicat în datele importate' }}</div>
+                <div><strong>Valoare estimată</strong>{{ $notice->estimated_value !== null ? number_format((float) $notice->estimated_value, 2, ',', '.') : '—' }} {{ $notice->currency }}</div>
+                <div><strong>Autoritate contractantă</strong>{{ $notice->authority_name ?? '—' }}</div>
+            </div>
             @include('notices.personal-panel')
 
             @if (data_get($notice->seap_metadata, 'bulk_only'))
@@ -157,6 +152,15 @@
                 </div>
             @endif
 
+            @php($additionalSummary = array_slice($notice->summaryItems(), $notice->description ? 1 : 0))
+            @if ($additionalSummary !== [])
+                <section class="mt-6 pt-6 border-t" aria-label="Sumar și loturi">
+                    <h2 class="text-lg font-semibold mb-3">Sumar și loturi disponibile</h2>
+                    @foreach ($additionalSummary as $item)
+                        <div class="mb-4"><h3 class="font-semibold text-sm">{{ $item['label'] }}</h3><p class="text-sm text-gray-700 whitespace-pre-line mt-1">{{ $item['text'] }}</p></div>
+                    @endforeach
+                </section>
+            @endif
             <section class="mt-6 pt-6 border-t">
                 <h2 class="text-lg font-semibold mb-3">Surse și actualizări</h2>
                 @foreach ($notice->sources as $sourceEntry)
@@ -200,6 +204,4 @@
             @endif
 
         </div>
-    </div>
-</body>
-</html>
+@endsection

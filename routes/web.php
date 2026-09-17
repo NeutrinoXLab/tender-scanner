@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\NoticePersonalController;
 use App\Http\Controllers\NoticeSupplierController;
@@ -13,6 +14,7 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [AuthController::class, 'store'])->middleware('throttle:20,1')->name('login.store');
 });
 Route::middleware(['auth', 'auth.session'])->group(function () {
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/', fn () => redirect()->route('notices.index'));
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::get('/notices', [NoticeController::class, 'index'])->name('notices.index');
