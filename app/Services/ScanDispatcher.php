@@ -87,6 +87,8 @@ class ScanDispatcher
         if (config('services.seap_worker.server')) {
             $run->update(['checkpoint' => array_replace($run->checkpoint ?? [], ['_worker_ready' => $seapOnly])]);
             if ($seapOnly) {
+                $run->update(['message' => 'Pregătit pentru workerul SEAP, fără job Laravel. Cererea se emite la claim.']);
+
                 return;
             }
         }

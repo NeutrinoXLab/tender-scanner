@@ -108,7 +108,8 @@ class SeapWorkerExchange
             $results['ted'] ??= ['status' => 'not_run', 'errors' => []];
             $families = $results['seap']['families'] ?? [];
             $complete = collect($run->families())->every(fn ($family) => ($families[$family]['complete'] ?? false) && ($families[$family]['status'] ?? null) === 'completed');
-            $failed = collect($families)->contains(fn ($stats) => ! empty($stats['errors']));
+            /** Stored errors of families not resumed yet belong to earlier attempts. */
+            $failed = $context->errorCount > 0;
             $results['seap']['status'] = $complete ? 'completed' : ($failed ? 'error' : 'paused');
             $results['seap']['errors'] = $failed ? ['Lotul workerului nu s-a încheiat complet. Progresul a fost păstrat.'] : [];
             $results['seap']['error_count'] = $failed ? 1 : 0;

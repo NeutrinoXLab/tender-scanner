@@ -569,3 +569,29 @@ La 403/429 SEAP, workerul transmite starea curată de eroare și se oprește cu 
 Implementarea a fost verificată cu răspunsuri simulate și baze de test, fără acces live la SEAP/KabyNode. Verificarea integrării reale prin --check și un lot mic se va face numai după deploymentul autorizat separat. Nu este necesar un build frontend: această etapă nu modifică frontendul.
 
 Verificare finală remote worker: 24 teste noi / 279 aserțiuni; suita completă 232 teste / 1.578 aserțiuni, toate trecute. Pint și git diff --check au trecut. Nu s-a modificat frontendul și nu s-a făcut build inutil.
+
+### Reluarea unui checkpoint anterior Remote Worker
+
+La reluarea unei scanări partial, erorile vechi ale familiilor încă neexecutate (de exemplu SCN oprit după un 403 CN) nu trebuie tratate ca erori ale noului claim. SeapWorkerExchange folosește acum erorile execuției curente din ScanContext pentru decizia de oprire. Erorile istorice rămân în progresul familiei până la reluarea ei; nu se șterg checkpoint-uri, ferestre, ID-uri sau date importate. Un nou 403/429 continuă să oprească execuția și să impună pauza.
+
+În modul remote, seap:tick pregătește scanarea și o rezervă pentru worker. Valoarea internă queued nu presupune existența unui job Laravel; mesajul CLI precizează „pregătit pentru workerul SEAP (fără job Laravel)”. Operația și SeapWorkerBatch sunt emise la claim, nu la tick. Lipsa unui job Laravel în acest mod este normală.
+
+Testul de regresie reproduce un checkpoint vechi fără _families: interval 16.08–15.09, PI complet 17, CN 178/189 și SCN not_run cu eroare istorică. Verifică tick → claim → răspuns SEAP simulat pe laptop → upload → următorul claim, păstrarea PI/TED și idempotenta Notice/NoticeSource/revisions. Înainte de corecție, primul claim răspundea 204; după corecție emite cererea CN și continuă fără resetare.
+
+Nu sunt necesare migrări sau variabile de configurare noi. După publicarea și instalarea autorizate separat a corecției pe ambele medii, testul real se face astfel, respectând pauza indicată de server:
+
+~~~sh
+cd /home/ikasiypk/tender-scanner
+php artisan queue:restart
+php artisan seap:tick --no-interaction
+~~~
+
+~~~powershell
+Set-Location C:\laragon\www\seap-scanner
+php artisan seap:worker --check --no-interaction
+php artisan seap:worker --no-interaction
+~~~
+
+Se păstrează tokenul și configurarea existente, inclusiv SEAP_WORKER_SERVER=true pe KabyNode și false pe laptop. Nu reseta ScanRun #1 sau fișierele locale de retransmitere. Un rezultat de zero transferuri poate rămâne legitim în timpul pauzei sau când nu există lucru; nu declanșa reluări rapide. Aceste comenzi nu au fost executate pe producție în etapa de corecție.
+
+Verificarea corecției: 25 teste Remote Worker / 307 aserțiuni; suita completă 233 teste / 1.606 aserțiuni. Pint și git diff --check au trecut. Frontendul, autentificarea, HTTPS, limitele de trafic/payload și migrațiile nu sunt modificate.

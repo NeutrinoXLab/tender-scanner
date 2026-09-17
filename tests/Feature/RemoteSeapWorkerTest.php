@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\NoticeIngestor;
 use App\Services\ScanContext;
 use App\Services\SeapClient;
+use App\Services\SeapWorkerClient;
 use App\Services\TedClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
@@ -350,5 +351,65 @@ class RemoteSeapWorkerTest extends TestCase
         $this->assertTrue($run->fresh()->seapComplete());
         $this->assertSame('partial', $run->fresh()->status);
         $this->assertSame(['TED indisponibil'], $run->fresh()->results['ted']['errors']);
+    }
+
+    public function test_legacy_partial_cn_resumes_through_tick_claim_laptop_upload_and_next_claim(): void
+    {
+        Queue::fake();
+        $done = array_fill_keys(range(1, 178), true);
+        $outcomes = array_fill_keys(range(1, 178), 'new');
+        $items = array_map(fn ($id) => ['cNoticeID' => $id, 'noticeNo' => 'CN'.$id, 'contractTitle' => 'CN '.$id], range(163, 180));
+        $windows = array_map(fn ($day) => '2026-08-'.$day.'T00:00:00+03:00', range(16, 19));
+        $pi = ['status' => 'completed', 'complete' => true, 'processed' => 17, 'errors' => []];
+        $cn = ['status' => 'error', 'complete' => false, 'processed' => 178, 'reported' => 189, 'fetched' => 180,
+            'listing_requests' => 10, 'errors' => ['SEAP HTTP 403']];
+        $scn = ['status' => 'not_run', 'complete' => false, 'errors' => ['Familie neinterogata: acces restrictionat.']];
+        $run = ScanRun::create(['mode' => 'full', 'status' => 'partial', 'active_key' => null,
+            'date_from' => '2026-08-16', 'date_to' => '2026-09-15',
+            'results' => ['seap' => ['status' => 'error', 'families' => ['PI' => $pi, 'CN' => $cn, 'SCN' => $scn]],
+                'ted' => ['status' => 'completed', 'errors' => []]],
+            'checkpoint' => ['_next_batch_at' => now()->subMinute()->toIso8601String(),
+                'PI' => ['stats' => $pi, 'ids' => array_fill_keys(range(1, 17), true)],
+                'CN' => ['stats' => $cn, 'ids' => $done, 'outcomes' => $outcomes, 'windows' => $windows,
+                    'totals' => ['2026-08-20T00:00:00+03:00' => 189], 'pending' => [179 => true, 180 => true],
+                    'cursor' => ['day' => '2026-08-20T00:00:00+03:00', 'page' => 9, 'received' => 180,
+                        'data' => ['total' => 189, 'items' => $items]]],
+                'SCN' => ['stats' => $scn]]]);
+        $piBefore = $run->checkpoint['PI'];
+        $tedBefore = $run->results['ted'];
+        $this->artisan('seap:tick')->expectsOutputToContain('pregătit pentru workerul SEAP (fără job Laravel)')->assertSuccessful();
+        Queue::assertNothingPushed();
+        $batch = $this->claim();
+        $this->assertSame('CN', $batch['request']['family']);
+        $this->assertSame(10, $batch['request']['page']);
+        $this->assertSame('2026-08-20T00:00:00+03:00', $batch['request']['from']);
+        $this->assertSame('running', $run->fresh()->status);
+        Http::assertNothingSent();
+
+        config(['services.seap_worker.server' => false]);
+        $rows = array_map(fn ($id) => ['cNoticeID' => $id, 'noticeNo' => 'CN'.$id, 'contractTitle' => 'CN '.$id], range(181, 189));
+        Http::fake(['*PUBLICCNotice/GetAll/' => Http::response(['total' => 189, 'items' => $rows])]);
+        $response = SeapWorkerClient::execute(app(SeapClient::class), $batch['request']);
+        Http::assertSentCount(1);
+        config(['services.seap_worker.server' => true]);
+        $payload = ['family' => 'CN', 'status' => 'ok', 'data' => $response];
+        $receipt = $this->upload($batch, $payload)->assertOk()->json();
+        $checkpoint = $run->fresh()->checkpoint;
+        $this->assertSame(189, $checkpoint['CN']['stats']['processed']);
+        $this->assertContains('2026-08-20T00:00:00+03:00', $checkpoint['CN']['windows']);
+        $this->assertSame($piBefore, $checkpoint['PI']);
+        $this->assertSame($tedBefore, $run->fresh()->results['ted']);
+        $this->assertDatabaseCount('notices', 11);
+        $this->assertDatabaseCount('notice_sources', 11);
+        $this->assertDatabaseCount('notice_revisions', 11);
+        $this->assertSame($receipt, $this->upload($batch, $payload)->assertOk()->json());
+        $this->assertSame($checkpoint, $run->fresh()->checkpoint);
+        $this->assertDatabaseCount('notice_revisions', 11);
+        $next = $this->claim();
+        $this->assertNotSame($batch['batch_id'], $next['batch_id']);
+        $this->assertSame('2026-08-21T00:00:00+03:00', $next['request']['from']);
+        $this->assertSame(0, $next['request']['page']);
+        $this->assertDatabaseCount('scan_runs', 1);
+        Http::assertSentCount(1);
     }
 }
