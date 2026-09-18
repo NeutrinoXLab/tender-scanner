@@ -11,7 +11,7 @@
             </a>
         </div>
 
-        <div class="bg-white border rounded-lg p-6">
+        <div class="surface tender-workspace">
 
             <div class="flex flex-wrap items-center gap-3 mb-4">
                 <span class="font-semibold text-gray-900">
@@ -37,11 +37,18 @@
             </h1>
 
             <div class="detail-overview">
-                <div class="deadline-box"><strong>Termen de depunere</strong>{{ $notice->submission_deadline?->format('d.m.Y H:i') ?? 'Necomunicat în datele importate' }}</div>
+                <x-notice-deadline :notice="$notice" />
                 <div><strong>Valoare estimată</strong>{{ $notice->estimated_value !== null ? number_format((float) $notice->estimated_value, 2, ',', '.') : '—' }} {{ $notice->currency }}</div>
                 <div><strong>Autoritate contractantă</strong>{{ $notice->authority_name ?? '—' }}</div>
             </div>
-            @include('notices.personal-panel')
+            <nav class="workspace-sections" aria-label="Secțiunile licitației">
+                <a href="#procurement-information">Date și descriere</a>
+                <a href="#personal-workspace">Status și notițe</a>
+                <a href="#source-history">Surse și istoric</a>
+                <a href="{{ route('notices.suppliers', $notice) }}">Furnizori și istoric comercial →</a>
+            </nav>
+            <div class="workspace-columns">
+            <div id="procurement-information">
 
             @if (data_get($notice->seap_metadata, 'bulk_only'))
                 <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-5 text-sm">Import din exportul trimestrial SEAP. Starea este cea din export; termenul și posibilitatea actuală de participare nu sunt confirmate. Anunțul rămâne în istoric până la verificare.</p>
@@ -162,7 +169,7 @@
                 </section>
             @endif
             <section class="mt-6 pt-6 border-t">
-                <h2 class="text-lg font-semibold mb-3">Surse și actualizări</h2>
+                <h2 id="source-history" class="text-lg font-semibold mb-3">Surse și actualizări</h2>
                 @foreach ($notice->sources as $sourceEntry)
                     <p class="mb-2"><strong>{{ strtoupper($sourceEntry->source) }} · {{ $sourceEntry->external_id }}</strong>
                         — verificat la {{ $sourceEntry->last_seen_at?->format('d.m.Y H:i') }}
@@ -203,5 +210,6 @@
                 </div>
             @endif
 
+            </div><aside id="personal-workspace">@include('notices.personal-panel')</aside></div>
         </div>
 @endsection

@@ -403,25 +403,54 @@
 
             @forelse ($notices as $notice)
 
-                <article class="notice-card">
-                    <div class="notice-meta">
-                        <span class="source-badge {{ $notice->source === 'ted' ? 'ted' : '' }}">Sursă: {{ strtoupper($notice->source ?? 'seap') }}</span>
+                @php($entry = $notice->personalEntries->first())
+                <article class="notice-card tender-card" aria-labelledby="notice-title-{{ $notice->id }}">
+                    <div class="tender-identity">
+                        <span class="source-badge {{ $notice->source === 'ted' ? 'ted' : 'seap' }}">Sursă: {{ strtoupper($notice->source ?? 'seap') }}</span>
+                        @if($notice->source === 'seap' && $notice->ted_id)<span class="source-badge ted">+ TED</span>@endif
                         @if($notice->source === 'seap' && data_get($notice->seap_metadata, 'family'))
-                            <span class="source-badge">{{ data_get($notice->seap_metadata, 'family') }}</span>
+                            <span class="family-badge family-{{ strtolower(data_get($notice->seap_metadata, 'family')) }}">{{ data_get($notice->seap_metadata, 'family') }}</span>
                         @endif
-                        <span>{{ $notice->notice_number }}</span>
-                        @if($notice->notice_type && $notice->source === 'seap')<span>{{ $notice->notice_type }}</span>@endif
-                        @if($notice->status)<span>· {{ $notice->status }}</span>@endif
-                        @if($notice->source === 'seap' && $notice->ted_id)<span>+ TED</span>@endif
                     </div>
-                    <h2 class="notice-title"><a href="{{ route('notices.show', $notice) }}">{{ $notice->title }}</a></h2>
-                    <p class="text-sm text-gray-600">{{ $notice->authority_name ?? 'Autoritate indisponibilă' }}</p>
-                    <dl class="notice-facts">
-                        <div class="deadline-box"><dt>Termen de depunere</dt><dd>{{ $notice->submission_deadline?->format('d.m.Y H:i') ?? 'Necomunicat' }}</dd></div>
-                        <div><dt>Valoare estimată</dt><dd>{{ $notice->estimated_value !== null ? number_format((float) $notice->estimated_value, 2, ',', '.') : '—' }} {{ $notice->currency ?? '' }}</dd></div>
-                        <div><dt>Publicat</dt><dd>{{ $notice->publication_date?->format('d.m.Y H:i') ?? '—' }}</dd></div>
-                    </dl>
-                    <p class="muted mb-3">Județ: {{ $notice->county ?? '—' }} · CPV: {{ $notice->cpv_code ?? '—' }}</p>
+                    <div class="tender-description">
+                        <h2 id="notice-title-{{ $notice->id }}" class="notice-title"><a href="{{ route('notices.show', $notice) }}">{{ $notice->title }}</a></h2>
+                        <p class="tender-authority">{{ $notice->authority_name ?? 'Autoritate indisponibilă' }}</p>
+                        <p class="muted mt-2">{{ collect([$notice->county, $notice->locality])->filter()->unique()->implode(' · ') ?: 'Localizare necomunicată' }}</p>
+                        <div class="tender-tags">
+                            @if($notice->cpv_code)<span>CPV {{ $notice->cpv_code }}</span>@endif
+                            @if($notice->contract_type)<span>{{ $notice->contract_type }}</span>@endif
+                            @if($notice->procedure_type)<span>{{ $notice->procedure_type }}</span>@endif
+                        </div>
+                        <p class="muted">{{ $notice->notice_number }} · Publicat: {{ $notice->publication_date?->format('d.m.Y H:i') ?? '—' }}</p>
+                        @if($notice->notice_type)<p class="muted">{{ $notice->notice_type }}</p>@endif
+                        @if($notice->status)<p class="muted">Stare procedură: {{ $notice->status }}</p>@endif
+                    </div>
+                    <div class="tender-decision">
+                        <div class="tender-value"><span class="fact-label">Valoare estimată</span><strong>{{ $notice->estimated_value !== null ? number_format((float) $notice->estimated_value, 2, ',', '.') : '—' }} {{ $notice->currency ?? '' }}</strong></div>
+                        <x-notice-deadline :notice="$notice" />
+                        <div class="tender-personal">
+                            <x-personal-badge :status="$entry?->personal_status" />
+                            @if($entry?->is_saved)<span class="collection-badge">Salvată</span>@endif
+                            @if($entry?->is_ignored)<span class="collection-badge">Ignorată</span>@endif
+                        </div>
+                    </div>
+                    <div class="tender-bottom">
+                        <div class="tender-actions">
+                            <a class="primary-link" href="{{ route('notices.show', $notice) }}">Vezi detalii →</a>
+                            <a class="quiet-action" href="{{ route('notices.suppliers', $notice) }}">Caută furnizori</a>
+                            @if($notice->seap_url)<a class="quiet-action" href="{{ $notice->seap_url }}" target="_blank" rel="noopener noreferrer">Anunț oficial SEAP ↗</a>@endif
+                            @if($notice->ted_url)<a class="quiet-action" href="{{ $notice->ted_url }}" target="_blank" rel="noopener noreferrer">Vezi anunțul pe TED ↗</a>@endif
+                            <form method="POST" action="{{ route('notices.personal.update', $notice) }}">
+                                @csrf @method('PATCH')
+                                <input type="hidden" name="action" value="{{ $entry?->is_saved ? 'unsave' : 'save' }}">
+                                <button class="quiet-action" aria-label="{{ $entry?->is_saved ? 'Elimină din salvate' : 'Salvează' }}: {{ $notice->title }}">{{ $entry?->is_saved ? 'Elimină din salvate' : 'Salvează' }}</button>
+                            </form>
+                            <form method="POST" action="{{ route('notices.personal.update', $notice) }}">
+                                @csrf @method('PATCH')
+                                <input type="hidden" name="action" value="{{ $entry?->is_ignored ? 'restore' : 'ignore' }}">
+                                <button class="quiet-action" aria-label="{{ $entry?->is_ignored ? 'Nu mai ignora' : 'Ignoră' }}: {{ $notice->title }}">{{ $entry?->is_ignored ? 'Nu mai ignora' : 'Ignoră' }}</button>
+                            </form>
+                        </div>
                     <details class="mb-4"><summary class="text-sm text-blue-700">Sumar și descriere</summary>
                         <section class="text-sm text-gray-700 border-t pt-3 mt-2" aria-label="Sumar anunț">
                             <h3 class="font-semibold mb-2">Sumar anunț</h3>
@@ -444,12 +473,7 @@
                             @endif
                         </section>
                     </details>
-                    <div class="notice-footer">
-                        <p class="text-xs text-gray-600">{{ $notice->personalEntries->first()?->is_saved ? '⭐ Salvată · ' : ($notice->personalEntries->first()?->is_ignored ? '🚫 Ignorată · ' : '') }}Status personal: {{ \App\Models\Notice::PERSONAL_STATUSES[$notice->personalEntries->first()?->personal_status] ?? 'Nouă' }}</p>
-                        <div class="flex flex-wrap gap-4 items-center">
-                            @if($notice->ted_url)<a href="{{ $notice->ted_url }}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline">Vezi anunțul pe TED</a>@endif
-                            <a href="{{ route('notices.show', $notice) }}" class="primary-link">Vezi detalii →</a>
-                        </div>
+
                     </div>
                 </article>
 

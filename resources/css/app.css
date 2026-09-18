@@ -117,3 +117,69 @@
         .metric-card strong { font-size: 28px; }
     }
 }
+
+@layer components {
+    .tender-card { display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(265px, .8fr); gap: 16px 20px; padding: 22px; }
+    .tender-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+    .tender-identity .source-badge { font-size: 10px; white-space: nowrap; }
+    .source-badge.seap { background: #e4f5ed; color: #116444; }
+    .family-badge { border-radius: 8px; font-size: 19px; font-weight: 750; padding: 6px 12px; background: #edf1f6; color: #334b68; }
+    .family-cn { background: #e4efff; color: #1c59af; }
+    .family-scn { background: #f0eafa; color: #7043a1; }
+    .family-adv { background: #fff0dc; color: #89511c; }
+    .tender-description { min-width: 0; }
+    .tender-description .notice-title { margin: 0 0 7px; font-size: 17px; line-height: 1.45; }
+    .tender-authority { font-size: 13px; font-weight: 550; color: #364d69; }
+    .tender-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+    .tender-tags span { background: #f0f4f9; color: #425670; border-radius: 5px; padding: 3px 7px; font-size: 11px; }
+    .tender-decision { border-left: 1px solid #e7edf5; padding-left: 20px; display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 14px; min-width: 0; }
+    .fact-label { display: block; font-size: 11px; color: #62718a; margin-bottom: 6px; font-weight: 500; }
+    .tender-value strong { display: block; font-size: 17px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+    .tender-deadline { padding: 10px 12px; border-radius: 9px; border: 1px solid #dce6f4; background: #f5f8fd; color: #304e78; }
+    .tender-deadline strong { display: block; font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+    .deadline-caption { display: block; font-size: 10px; margin-top: 4px; }
+    .deadline-soon { background: #fff5e6; border-color: #f3d5aa; color: #8d4c13; }
+    .deadline-expired { background: #f8eeee; border-color: #ebd3d3; color: #8a3d3d; }
+    .deadline-unknown { background: #f4f5f7; border-color: #e2e5e9; color: #596574; }
+    .tender-personal { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+    .personal-badge { display: inline-flex; border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 650; background: #edf2f7; color: #45566e; }
+    .status-new { background: #e7f5ed; color: #1b6441; }
+    .status-analyzing { background: #fff0d7; color: #8a4d12; }
+    .status-requesting_quote { background: #e5efff; color: #2256a0; }
+    .status-participating { background: #eee8fb; color: #674093; }
+    .status-declined { background: #eceff3; color: #526074; }
+    .collection-badge { font-size: 11px; border: 1px solid #dbe4ed; padding: 4px 9px; border-radius: 6px; color: #49617d; }
+    .tender-bottom { grid-column: 2 / -1; }
+    .tender-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; border-top: 1px solid #edf0f5; padding-top: 12px; margin-bottom: 10px; }
+    .tender-actions .primary-link { font-size: 12px; padding: 8px 13px; }
+    .quiet-action { display: inline-flex; align-items: center; min-height: 40px; color: #315e91; font-size: 12px; font-weight: 550; }
+    .quiet-action:hover { color: #1645ab; text-decoration: underline; }
+    .tender-bottom > details { margin: 0; }
+    .tender-bottom > details > summary { font-size: 11px; color: #5d718c; }
+    .workspace-sections { display: flex; flex-wrap: wrap; gap: 10px 24px; border-block: 1px solid #e4eaf2; padding: 15px 0; margin-bottom: 24px; }
+    .workspace-sections a { color: #365f91; font-size: 12px; padding: 5px 0; }
+    .workspace-columns { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 30px; align-items: start; }
+    .workspace-columns > * { min-width: 0; scroll-margin-top: 20px; }
+    .personal-workspace-panel { padding: 20px; background: #f5f8fc; border: 1px solid #e0e8f3; border-radius: 14px; }
+    .personal-workspace-panel select { max-width: 100%; }
+    .detail-overview .tender-deadline strong { text-transform: none; letter-spacing: normal; color: inherit; font-size: 17px; }
+    .detail-overview .tender-deadline { background: #f5f8fd; }
+    .detail-overview .deadline-soon { background: #fff5e6; }
+    .detail-overview .deadline-expired { background: #f8eeee; }
+    .detail-overview .deadline-unknown { background: #f4f5f7; }
+    @media (max-width: 1250px) {
+        .tender-card { grid-template-columns: 65px minmax(0, 1fr); }
+        .tender-decision { grid-column: 2; border-left: 0; padding-left: 0; grid-template-columns: 1fr 1fr; }
+        .workspace-columns { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 600px) {
+        .tender-card { padding: 18px; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+        .tender-identity { flex-direction: row; align-items: center; }
+        .family-badge { font-size: 12px; padding: 4px 9px; }
+        .tender-decision, .tender-bottom { grid-column: 1; }
+        .tender-decision { gap: 12px; }
+        .tender-value strong { font-size: 15px; }
+        .tender-workspace { padding: 18px; }
+        .personal-workspace-panel { padding: 16px; }
+    }
+}

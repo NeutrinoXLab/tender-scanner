@@ -1,4 +1,7 @@
-<section class="mb-6 rounded-lg border bg-gray-50 p-4 sm:p-5" aria-label="Organizarea mea">
+<section class="personal-workspace-panel" aria-label="Organizarea mea">
+    <h2 class="text-lg font-semibold mb-2">Spațiul meu de lucru</h2>
+    <p class="muted mb-4">Statusul și notițele sunt personale.</p>
+    <div class="mb-5"><x-personal-badge :status="$personal->personal_status" /></div>
     @if (session('personal_message'))
         <p role="status" class="mb-4 text-sm text-green-800">{{ session('personal_message') }}</p>
     @endif
