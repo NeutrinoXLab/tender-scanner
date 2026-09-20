@@ -28,6 +28,18 @@ class ScanDispatcher
             if (! $resume && $mode === 'full') {
                 $resume = ScanRun::oldestIncomplete();
             }
+            if ($mode === 'full' && config('services.seap_worker.server')) {
+                $cooling = ScanRun::remoteCooldown();
+                if ($cooling) {
+                    return $cooling;
+                }
+                if (! $resume && $seapOnly && ($backfill = ScanRun::nextBackfill())) {
+                    $backfill->update(['status' => 'queued', 'active_key' => 'manual', 'finished_at' => null,
+                        'message' => 'Backfill pregătit pentru workerul autorizat.']);
+
+                    return $backfill;
+                }
+            }
             if ($resume) {
                 if (! empty($options['from']) && ($options['from'] !== $resume->date_from || $options['to'] !== $resume->date_to)) {
                     throw ValidationException::withMessages(['from' => 'Există o sincronizare SEAP incompletă. Continuați intervalul '.$resume->date_from.' – '.$resume->date_to.'.']);

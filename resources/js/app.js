@@ -30,6 +30,7 @@ if (panel) {
         status.textContent = `Scanare urmărită: ${scan.started_at || scan.created_at} — ${labels[scan.status]}. Perioadă verificată: ${scan.from} – ${scan.to}.`;
         if (scan.finished_at) status.textContent += ` Încheiată la ${scan.finished_at}.`;
         results.replaceChildren();
+        if (scan.mode === 'backfill') line(`Recuperare istoric SEAP #${scan.id}. Controlul suspendării/reluării se face prin comanda backfill.`);
         line(`${scan.counts.new} noi · ${scan.counts.updated} actualizate · ${scan.counts.checked} verificate`);
         for (const [source, result] of Object.entries(scan.results)) {
             line(`${source.toUpperCase()}: ${labels[result.status]} — ${result.new} noi, ${result.updated} actualizate, ${result.unchanged} fără modificări.`);

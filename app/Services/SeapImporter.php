@@ -19,6 +19,7 @@ class SeapImporter
         $report = [];
         $restricted = false;
         $context = app(ScanContext::class);
+        $backfill = $context->runId !== null && ScanRun::findOrFail($context->runId)->mode === 'backfill';
         $batchSize = ! $probe && $limit === 0 && $context->runId !== null
             ? max(1, (int) config('services.seap.batch_size', 100)) : PHP_INT_MAX;
         $attempted = 0;
@@ -93,7 +94,7 @@ class SeapImporter
                     if (in_array($start, $completedWindows, true)) {
                         continue;
                     }
-                    if (! $probe && $limit === 0 && in_array($family, ['CN', 'SCN'], true) && $start !== null
+                    if (! $backfill && ! $probe && $limit === 0 && in_array($family, ['CN', 'SCN'], true) && $start !== null
                         && $pending === []
                         && ! config('services.seap.fetch_procedure_details', false)
                         && substr($start, 0, 10) !== $refreshDay

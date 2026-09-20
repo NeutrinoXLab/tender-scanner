@@ -22,6 +22,9 @@ class RunManualScan implements ShouldQueue
 
     public function handle(ScanContext $context): void
     {
+        if (ScanRun::whereKey($this->runId)->where('mode', 'backfill')->exists()) {
+            return;
+        }
         $claimed = ScanRun::whereKey($this->runId)->where('status', 'queued')->update([
             'status' => 'running', 'started_at' => now(), 'heartbeat_at' => now(),
         ]);

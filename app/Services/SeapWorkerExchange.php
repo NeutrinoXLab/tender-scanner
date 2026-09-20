@@ -15,12 +15,16 @@ class SeapWorkerExchange
     {
         return Cache::lock('seap-worker-exchange', 120)->block(5, function (): ?SeapWorkerBatch {
             if ($pending = SeapWorkerBatch::whereNull('response_hash')->oldest()->first()) {
-                abort_if(ScanRun::findOrFail($pending->scan_run_id)->status === 'cancelled', 409, 'Scanare anulată.');
+                $pendingRun = ScanRun::findOrFail($pending->scan_run_id);
+                abort_if($pendingRun->status === 'cancelled', 409, 'Scanare anulată.');
+                if ($pendingRun->checkpoint['_backfill_hold'] ?? false) {
+                    return null;
+                }
 
                 return $pending;
             }
             $run = app(ScanDispatcher::class)->dispatch(seapOnly: true);
-            if (! ($run->checkpoint['_worker_ready'] ?? false) || ! $run->batchAvailable() || $run->seapComplete()) {
+            if (! ($run->checkpoint['_worker_ready'] ?? false) || ($run->checkpoint['_backfill_hold'] ?? false) || ! $run->batchAvailable() || $run->seapComplete()) {
                 return null;
             }
 
@@ -114,7 +118,7 @@ class SeapWorkerExchange
             $results['seap']['errors'] = $failed ? ['Lotul workerului nu s-a încheiat complet. Progresul a fost păstrat.'] : [];
             $results['seap']['error_count'] = $failed ? 1 : 0;
             $checkpoint = $run->checkpoint;
-            $pause = $complete || $failed || ($checkpoint['_worker_used'] ?? 0) >= $budget || ($checkpoint['_worker_requests'] ?? 0) >= $budget || $client->pending === null;
+            $pause = $complete || $failed || ($checkpoint['_backfill_hold'] ?? false) || ($checkpoint['_worker_used'] ?? 0) >= $budget || ($checkpoint['_worker_requests'] ?? 0) >= $budget || $client->pending === null;
             if ($pause) {
                 $interval = max(1, (int) config('services.seap_worker.batch_interval_minutes', 60));
                 if ($failed) {

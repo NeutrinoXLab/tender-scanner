@@ -20,6 +20,7 @@
     <div id="manual-scan-status" role="status" aria-live="polite" class="text-sm text-gray-700 mt-3">{{ $scanSummary ? 'Scanare urmărită: '.$scanSummary['created_at'].' — '.$scanLabels[$scanSummary['status']].'. Perioadă: '.$scanSummary['from'].' – '.$scanSummary['to'] : 'Nu a fost pornită încă o scanare din browser.' }}</div>
     <div id="manual-scan-results" class="text-sm mt-3 space-y-2">
         @if ($latestScan)
+            @if ($scanSummary['mode'] === 'backfill')<p>Recuperare istoric SEAP #{{ $scanSummary['id'] }}. Controlul suspendării/reluării se face prin comanda backfill.</p>@endif
             <p>{{ $scanSummary['counts']['new'] }} noi · {{ $scanSummary['counts']['updated'] }} actualizate · {{ $scanSummary['counts']['checked'] }} verificate</p>
             @foreach ($scanSummary['results'] as $scanSource => $result)
                 @if ($scanSource === 'seap')

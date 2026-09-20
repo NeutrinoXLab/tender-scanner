@@ -22,7 +22,21 @@ class ScanRun extends Model
     {
         return static::where('active_key', 'manual')->first()
             ?? static::oldestIncomplete()
+            ?? static::nextBackfill()
             ?? static::latest('id')->first();
+    }
+
+    public static function nextBackfill(): ?self
+    {
+        return static::where('mode', 'backfill')->whereIn('status', ['pending', 'paused', 'partial', 'failed'])
+            ->orderBy('id')->get()->first(fn (self $run): bool => ! $run->seapComplete() && ! ($run->checkpoint['_backfill_hold'] ?? false));
+    }
+
+    public static function remoteCooldown(): ?self
+    {
+        return static::whereIn('mode', ['full', 'backfill'])->whereNotNull('checkpoint->_next_batch_at')->get()
+            ->filter(fn (self $run): bool => ! $run->batchAvailable())
+            ->sortByDesc(fn (self $run): int => CarbonImmutable::parse($run->checkpoint['_next_batch_at'])->timestamp)->first();
     }
 
     /** @return array<int, string> */
@@ -63,7 +77,7 @@ class ScanRun extends Model
             $results[$source] = ($results[$source] ?? ['status' => 'pending', 'errors' => []]) + $this->counts($source);
         }
         $families = $results['seap']['families'] ?? [];
-        $terminal = ! in_array($this->status, ['queued', 'running'], true);
+        $terminal = ! in_array($this->status, ['pending', 'queued', 'running'], true);
         $unverified = false;
         foreach ($this->families() as $family) {
             if (! isset($families[$family])) {
