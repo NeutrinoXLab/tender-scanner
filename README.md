@@ -494,7 +494,7 @@ Nu există alt algoritm de scanare pe laptop. SeapWorkerClient suspendă importa
 
 Migrarea nouă **2026_09_17_083837_create_seap_worker_batches_table** adaugă doar tabelul seap_worker_batches: cerere, UUID, hash și confirmare. O cheie unică permite o singură cerere neconfirmată. Importul și confirmarea sunt în aceeași tranzacție. Același UUID/conținut întoarce confirmarea precedentă, fără reimport; alt conținut produce 409. Reinstalarea laptopului nu pierde checkpoint-ul. Răspunsurile care existau exclusiv pe discul pierdut trebuie recitite de la SEAP.
 
-Un transfer conține o pagină de maximum 100 ADV / 18 PI/CN/SCN sau detaliul unui singur anunț. Serverul aplică cumulativ SEAP_BATCH_SIZE (maximum 100 în modul remote) și pauza SEAP_BATCH_INTERVAL_MINUTES; fiecare POST nu resetează limita. Pagina rămasă este păstrată central. Configurația de completare și dimensiune este fixată pentru lotul în curs, apoi reîncărcată după pauză. Detaliile CN/SCN/ADV sunt implicit oprite; un detaliu CN/SCN activat explicit poate însemna patru cereri SEAP.
+Un transfer conține o pagină de maximum 100 ADV / 18 PI/CN/SCN sau detaliul unui singur anunț. Serverul aplică cumulativ SEAP_BATCH_SIZE (maximum 100 în modul remote) și pauza SEAP_WORKER_BATCH_INTERVAL_MINUTES pentru loturile remote reușite; fiecare POST nu resetează limita. Pagina rămasă este păstrată central. Configurația de completare și dimensiune este fixată pentru lotul în curs, apoi reîncărcată după pauză. Detaliile CN/SCN/ADV sunt implicit oprite; un detaliu CN/SCN activat explicit poate însemna patru cereri SEAP.
 
 API privat, exclusiv HTTPS și token Bearer dedicat:
 - GET /api/seap-worker/ping — verifică autentificarea, fără scanare.
@@ -595,3 +595,46 @@ php artisan seap:worker --no-interaction
 Se păstrează tokenul și configurarea existente, inclusiv SEAP_WORKER_SERVER=true pe KabyNode și false pe laptop. Nu reseta ScanRun #1 sau fișierele locale de retransmitere. Un rezultat de zero transferuri poate rămâne legitim în timpul pauzei sau când nu există lucru; nu declanșa reluări rapide. Aceste comenzi nu au fost executate pe producție în etapa de corecție.
 
 Verificarea corecției: 25 teste Remote Worker / 307 aserțiuni; suita completă 233 teste / 1.606 aserțiuni. Pint și git diff --check au trecut. Frontendul, autentificarea, HTTPS, limitele de trafic/payload și migrațiile nu sunt modificate.
+
+### Ritmul Remote Worker și automatizarea Windows (pregătite, neactivate)
+
+Audit local 20.09.2026: `SeapWorkerExchange::advance()` calcula pauza remote din `services.seap.batch_interval_minutes`, adică `SEAP_BATCH_INTERVAL_MINUTES`, aceeași setare ca execuția directă. Data rezultată este persistată în `scan_runs.checkpoint._next_batch_at`; dispatcherul și `seap:tick` respectă acea dată. Valoarea implicită din cod, inclusiv istoricul Git, este 60 minute. O pauză efectivă de șase ore corespunde unei valori efective de 360 minute la încheierea lotului (sau unui checkpoint anterior astfel stabilit). Nu am citit configurația/cache-ul ori baza producției; originea operațională a valorii 360 rămâne cea raportată de utilizator. Nu este o cerință a protocolului Remote Worker. Timeoutul jobului și vechiul TTL al blocării locale, ambele 21600 secunde, nu generează mesajul `seap:tick`.
+
+Loturile remote reușite folosesc acum **`SEAP_WORKER_BATCH_INTERVAL_MINUTES=60`**, configurat pe server. O oră este un punct de pornire conservator, păstrând limita existentă de operații/lot, limita de transferuri/invocare și întârzierea dintre cereri. Nu creșteți `SEAP_BATCH_SIZE`, `SEAP_WORKER_REQUEST_LIMIT` sau opțiunile de detalii pentru automatizare. Orice eroare curentă, inclusiv 403/429/unavailable, impune cel puțin 360 minute și cel puțin valorile intervalului remote și ale vechiului interval direct. Astfel o restricție reală nu primește retry la fiecare verificare Windows. Pauzele deja salvate nu se scurtează și checkpointurile nu se resetează; noul interval se aplică la încheierea următorului lot. `SEAP_WORKER_SERVER=true` rămâne obligatoriu pe KabyNode.
+
+Pe Windows, `run-seap-worker.ps1` execută o singură invocare, cu PHP indicat explicit și directorul proiectului ca director curent. Nu instalează taskuri. Blocarea `flock` din worker exclude și invocările manuale concurente din aceeași copie a proiectului; sistemul eliberează blocarea când procesul moare, fără a aștepta vechiul TTL de șase ore. Nu ștergeți fișierul `worker.lock` și nu rulați alte copii ale proiectului ca worker simultan.
+
+Laptop oprit: serverul păstrează checkpointul și cererea neconfirmată; răspunsul local din outbox rămâne pe disc. La următorul login, se retransmite întâi outboxul existent, apoi se cere lucru. Dacă pauza serverului continuă, claim răspunde 204, workerul încheie cu succes și nu accesează SEAP. Dacă pauza a trecut, continuă normal, cu limitele existente; nu compensează timpul oprit prin loturi nelimitate. Întreruperea înainte de salvarea răspunsului poate necesita recitirea aceleiași operații; importul central rămâne idempotent.
+
+**Activare numai după aprobarea explicită, instalarea ulterioară a codului și verificarea configurației pe ambele medii.** Pe server se setează noua variabilă și se reîncarcă configurația/procesele prin procedura de deployment autorizată separat. Pe laptop se păstrează tokenul/URL-ul HTTPS, `SEAP_WORKER_SERVER=false`, limita existentă și `SEAP_REQUEST_DELAY_MS=1000`. Nu se pun tokenuri în task sau în argumente.
+
+Comenzile de mai jos sunt doar instrucțiuni pentru activarea ulterioară. Din PowerShell cu PHP 8.3 disponibil:
+
+~~~powershell
+Set-Location C:\laragon\www\seap-scanner
+$workerProject = (Get-Location).Path
+$workerPhp = (Get-Command php.exe -ErrorAction Stop).Source
+& $workerPhp -v
+& $workerPhp artisan config:clear --no-interaction
+& $workerPhp artisan seap:worker --check --no-interaction
+if ($LASTEXITCODE -ne 0) { throw 'Verificarea autentificata a esuat; nu instala taskul.' }
+
+$workerUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$workerArguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "{0}\run-seap-worker.ps1" -PhpPath "{1}"' -f $workerProject, $workerPhp
+$workerAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument $workerArguments -WorkingDirectory $workerProject
+$workerTriggers = @(
+    (New-ScheduledTaskTrigger -AtLogOn -User $workerUser)
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Minutes 15))
+)
+$workerSettings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+$workerPrincipal = New-ScheduledTaskPrincipal -UserId $workerUser -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName 'Tender Scanner Remote Worker' -Action $workerAction -Trigger $workerTriggers -Settings $workerSettings -Principal $workerPrincipal -Description 'Worker SEAP autorizat: login si verificare la 15 minute; checkpoint pe server.'
+~~~
+
+Aceasta este varianta **la login**, fără parolă salvată, fără drepturi administrative și fără pornirea/trezirea laptopului noaptea. Repetarea de 15 minute este nelimitată; rulează cât timp utilizatorul este autentificat. `IgnoreNew` previne suprapunerea taskurilor, iar blocarea PHP protejează inclusiv rularea manuală. Limita de două ore oprește o invocare blocată; următoarea folosește outboxul/checkpointul. Nu este necesară modificarea cronului serverului: claim poate pregăti următorul lot. Monitorizarea ulterioară se face în panou și în Task Scheduler (`LastRunTime`, `LastTaskResult`; 0 = succes inclusiv fără lucru, nenul = eroare). Pentru suspendare ulterioară: `Disable-ScheduledTask -TaskName 'Tender Scanner Remote Worker'`.
+
+Panoul și endpointul de polling aleg acum scanarea activă, apoi aceeași cea mai veche sincronizare incompletă ca dispatcherul, apoi ultima scanare. Linkul de actualizare este relativ și păstrează parametrii curenți, fără hostul din APP_URL. Modificarea JavaScript necesită build frontend la instalare.
+
+Automatizarea continuă intervalele SCN din checkpoint și apoi delta; nu garantează recuperarea istoricului anterior intervalelor acoperite. Pentru acel istoric va fi necesar separat un bulk/backfill controlat, după inventarierea acoperirii. Această etapă nu pornește un backfill și nu modifică endpointurile SEAP sau TED.
+
+Verificare locală: 61 teste / 699 aserțiuni pentru Remote Worker, selecția panoului, loturi, familii, stabilizare și filtre; toate trecute. Pint, build Vite, sintaxa scriptului PowerShell și `git diff --check` au trecut. Buildul semnalează doar lipsa pachetului opțional `fontaine` pentru optimizarea fonturilor; dependențele nu au fost schimbate. Nu s-au efectuat cereri live SEAP, instalare Task Scheduler, push sau deployment. Comenzile de înregistrare a taskului sunt pregătite pentru verificarea operațională ulterioară, nu executate în acest audit.

@@ -26,8 +26,7 @@ class ScanDispatcher
                 throw ValidationException::withMessages(['resume_id' => 'Scanarea nu poate fi reluată.']);
             }
             if (! $resume && $mode === 'full') {
-                $resume = ScanRun::where('mode', 'full')->whereIn('status', ['paused', 'partial', 'failed'])
-                    ->whereNotNull('checkpoint')->orderBy('id')->get()->first(fn (ScanRun $run): bool => ! $run->seapComplete());
+                $resume = ScanRun::oldestIncomplete();
             }
             if ($resume) {
                 if (! empty($options['from']) && ($options['from'] !== $resume->date_from || $options['to'] !== $resume->date_to)) {

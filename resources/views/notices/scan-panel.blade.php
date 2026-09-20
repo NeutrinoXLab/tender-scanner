@@ -5,7 +5,7 @@
     @endphp
     <div class="flex flex-wrap justify-between gap-3 items-center">
         <div><h2 class="font-semibold text-gray-900">Actualizare SEAP + TED</h2>
-            <p class="text-sm text-gray-600">Verifică anunțurile noi și modificările celor deja importate.</p></div>
+            <p class="text-sm text-gray-600">Panoul urmărește scanarea activă sau cea mai veche sincronizare SEAP restantă; altfel, ultima scanare.</p></div>
         <form id="manual-scan-form" method="POST" action="{{ route('scans.store') }}">@csrf
             <div class="flex flex-wrap gap-3 mb-3">
                 <label class="text-sm">De la <input type="date" name="from" class="border rounded p-1" aria-label="Scanare de la"></label>
@@ -17,7 +17,7 @@
             <button id="manual-scan-resume" type="submit" name="resume_id" value="{{ $latestScan?->id }}" class="border rounded-lg px-4 py-2" @if (!($scanSummary['can_resume'] ?? false)) hidden @endif>Continuă scanarea</button>
         </form>
     </div>
-    <div id="manual-scan-status" role="status" aria-live="polite" class="text-sm text-gray-700 mt-3">{{ $scanSummary ? 'Ultima scanare: '.$scanSummary['created_at'].' — '.$scanLabels[$scanSummary['status']].'. Perioadă: '.$scanSummary['from'].' – '.$scanSummary['to'] : 'Nu a fost pornită încă o scanare din browser.' }}</div>
+    <div id="manual-scan-status" role="status" aria-live="polite" class="text-sm text-gray-700 mt-3">{{ $scanSummary ? 'Scanare urmărită: '.$scanSummary['created_at'].' — '.$scanLabels[$scanSummary['status']].'. Perioadă: '.$scanSummary['from'].' – '.$scanSummary['to'] : 'Nu a fost pornită încă o scanare din browser.' }}</div>
     <div id="manual-scan-results" class="text-sm mt-3 space-y-2">
         @if ($latestScan)
             <p>{{ $scanSummary['counts']['new'] }} noi · {{ $scanSummary['counts']['updated'] }} actualizate · {{ $scanSummary['counts']['checked'] }} verificate</p>
@@ -33,6 +33,6 @@
             @if ($scanSummary['mode'] === 'probe')<p>Test limitat: câte o pagină per familie, fără detalii sau import; TED nu este apelat.</p>@endif
         @endif
     </div>
-    <a id="manual-scan-refresh" href="{{ request()->fullUrl() }}" class="text-sm text-blue-600 hover:underline mt-3 inline-block" @if (!$latestScan || in_array($latestScan->status, ['queued', 'running'], true)) hidden @endif>Actualizează lista licitațiilor</a>
+    <a id="manual-scan-refresh" href="{{ route('notices.index', request()->query(), false) }}" class="text-sm text-blue-600 hover:underline mt-3 inline-block" @if (!$latestScan || in_array($latestScan->status, ['queued', 'running'], true)) hidden @endif>Actualizează lista licitațiilor</a>
     <noscript><p class="text-sm mt-2">Reîncarcă pagina pentru a vedea progresul și rezultatul scanării.</p></noscript>
 </section>

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -30,9 +29,16 @@ class SeapWorkerTransport
             return 0;
         }
 
-        return Cache::lock('seap-worker-local', 21600)->block(1, function () use ($url, $http): int {
-            $directory = storage_path('app/private/seap-worker');
-            File::ensureDirectoryExists($directory, 0700);
+        $directory = storage_path('app/private/seap-worker');
+        File::ensureDirectoryExists($directory, 0700);
+        $lock = fopen($directory.'/worker.lock', 'c');
+        if ($lock === false) {
+            throw new RuntimeException('Blocarea workerului nu este disponibilă.');
+        }
+        try {
+            if (! flock($lock, LOCK_EX | LOCK_NB)) {
+                return 0;
+            }
             $path = $directory.'/'.hash('sha256', $url).'.json';
             $accepted = 0;
             for ($operation = 0; $operation < min(100, max(1, (int) config('services.seap_worker.request_limit'))); $operation++) {
@@ -84,6 +90,8 @@ class SeapWorkerTransport
             }
 
             return $accepted;
-        });
+        } finally {
+            fclose($lock);
+        }
     }
 }

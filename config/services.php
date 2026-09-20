@@ -7,6 +7,7 @@ return [
         'token' => env('SEAP_WORKER_TOKEN'),
         'max_bytes' => (int) env('SEAP_WORKER_MAX_BYTES', 2097152),
         'request_limit' => (int) env('SEAP_WORKER_REQUEST_LIMIT', 20),
+        'batch_interval_minutes' => (int) env('SEAP_WORKER_BATCH_INTERVAL_MINUTES', 60),
     ],
 
     'price_scanner' => [

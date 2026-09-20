@@ -27,7 +27,7 @@ if (panel) {
         resumeButton.hidden = !scan.can_resume;
         resumeButton.value = scan.id;
         button.textContent = active ? 'Scanare în curs…' : 'Scanează acum';
-        status.textContent = `Ultima scanare: ${scan.started_at || scan.created_at} — ${labels[scan.status]}. Perioadă verificată: ${scan.from} – ${scan.to}.`;
+        status.textContent = `Scanare urmărită: ${scan.started_at || scan.created_at} — ${labels[scan.status]}. Perioadă verificată: ${scan.from} – ${scan.to}.`;
         if (scan.finished_at) status.textContent += ` Încheiată la ${scan.finished_at}.`;
         results.replaceChildren();
         line(`${scan.counts.new} noi · ${scan.counts.updated} actualizate · ${scan.counts.checked} verificate`);

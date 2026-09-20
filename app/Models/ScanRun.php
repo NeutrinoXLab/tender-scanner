@@ -12,6 +12,19 @@ class ScanRun extends Model
 
     protected $casts = ['checkpoint' => 'array', 'results' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'heartbeat_at' => 'datetime'];
 
+    public static function oldestIncomplete(): ?self
+    {
+        return static::where('mode', 'full')->whereIn('status', ['paused', 'partial', 'failed'])
+            ->whereNotNull('checkpoint')->orderBy('id')->get()->first(fn (self $run): bool => ! $run->seapComplete());
+    }
+
+    public static function forPanel(): ?self
+    {
+        return static::where('active_key', 'manual')->first()
+            ?? static::oldestIncomplete()
+            ?? static::latest('id')->first();
+    }
+
     /** @return array<int, string> */
     public function families(): array
     {

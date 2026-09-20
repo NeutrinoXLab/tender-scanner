@@ -116,7 +116,11 @@ class SeapWorkerExchange
             $checkpoint = $run->checkpoint;
             $pause = $complete || $failed || ($checkpoint['_worker_used'] ?? 0) >= $budget || ($checkpoint['_worker_requests'] ?? 0) >= $budget || $client->pending === null;
             if ($pause) {
-                $checkpoint['_next_batch_at'] = now()->addMinutes(max(1, (int) config('services.seap.batch_interval_minutes')))->toIso8601String();
+                $interval = max(1, (int) config('services.seap_worker.batch_interval_minutes', 60));
+                if ($failed) {
+                    $interval = max($interval, 360, (int) config('services.seap.batch_interval_minutes', 60));
+                }
+                $checkpoint['_next_batch_at'] = now()->addMinutes($interval)->toIso8601String();
             }
             $run->update(['results' => $results, 'checkpoint' => $checkpoint,
                 'status' => $complete ? ($results['ted']['status'] === 'error' ? 'partial' : 'completed') : ($failed ? 'partial' : ($pause ? 'paused' : 'running')),

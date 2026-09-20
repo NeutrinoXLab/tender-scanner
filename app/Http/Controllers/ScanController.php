@@ -29,6 +29,6 @@ class ScanController extends Controller
 
     public function latest(): JsonResponse
     {
-        return response()->json(ScanRun::latest('id')->first()?->summary())->header('Cache-Control', 'no-store');
+        return response()->json(ScanRun::forPanel()?->summary())->header('Cache-Control', 'no-store');
     }
 }

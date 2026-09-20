@@ -169,10 +169,12 @@ class RemoteSeapWorkerTest extends TestCase
         Http::assertNothingSent();
     }
 
-    #[TestWith(['403'])]
-    #[TestWith(['429'])]
-    public function test_restriction_preserves_progress_and_resume_waits_for_cooldown(string $status): void
+    #[TestWith(['403', 60, 360])]
+    #[TestWith(['429', 360, 360])]
+    #[TestWith(['unavailable', 720, 720])]
+    public function test_restriction_preserves_progress_and_resume_waits_for_cooldown(string $status, int $legacyInterval, int $cooldown): void
     {
+        config(['services.seap.batch_interval_minutes' => $legacyInterval]);
         $run = $this->runFor(['PI', 'ADV']);
         $this->upload($this->claim(), $this->listing([['piNoticeId' => 1, 'title' => 'PI']], 'PI'))->assertOk();
         $batch = $this->claim();
@@ -181,6 +183,8 @@ class RemoteSeapWorkerTest extends TestCase
         $this->assertCount(1, $run->fresh()->checkpoint['PI']['cursor']['data']['items']);
         $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
         $this->travel(61)->minutes();
+        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+        $this->travel($cooldown - 60)->minutes();
         $next = $this->claim();
         $this->assertSame('pi_detail', $next['request']['kind']);
         $this->assertSame(1, $next['request']['id']);
@@ -199,6 +203,47 @@ class RemoteSeapWorkerTest extends TestCase
         $this->assertDatabaseCount('notices', 3);
         $this->assertTrue($run->fresh()->seapComplete());
         Http::assertNothingSent();
+    }
+
+    public function test_remote_interval_is_separate_and_existing_deadline_survives_laptop_downtime(): void
+    {
+        config(['services.seap.batch_size' => 1, 'services.seap.batch_interval_minutes' => 360,
+            'services.seap_worker.batch_interval_minutes' => 90]);
+        $run = $this->runFor();
+        $this->upload($this->claim(), $this->listing([$this->adv(), $this->adv('Second', 2)]))->assertOk();
+        $deadline = now()->addMinutes(90)->toIso8601String();
+        $checkpoint = $run->fresh()->checkpoint;
+        $this->assertSame($deadline, $checkpoint['_next_batch_at']);
+        config(['services.seap_worker.batch_interval_minutes' => 60]);
+        $this->travel(61)->minutes();
+        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+        $this->assertSame($checkpoint, $run->fresh()->checkpoint);
+        $this->travel(12)->hours();
+        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+        $this->assertTrue($run->fresh()->seapComplete());
+        $this->assertDatabaseCount('notices', 2);
+        $this->assertDatabaseCount('scan_runs', 1);
+        Http::assertNothingSent();
+    }
+
+    public function test_worker_no_work_and_overlap_exit_cleanly_without_seap(): void
+    {
+        $url = 'https://worker-test.invalid/'.Str::uuid();
+        config(['services.seap_worker.server' => false, 'services.seap_worker.url' => $url]);
+        Http::fake([$url.'/api/seap-worker/claim' => Http::response('', 204)]);
+        $directory = storage_path('app/private/seap-worker');
+        File::ensureDirectoryExists($directory);
+        $lock = fopen($directory.'/worker.lock', 'c');
+        $this->assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+        try {
+            $this->artisan('seap:worker')->assertSuccessful();
+            Http::assertNothingSent();
+        } finally {
+            fclose($lock);
+        }
+        $this->artisan('seap:worker')->assertSuccessful();
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => $request->url() === $url.'/api/seap-worker/claim');
     }
 
     public function test_manual_flow_runs_ted_but_does_not_query_seap_on_central_server(): void

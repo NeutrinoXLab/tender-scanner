@@ -151,7 +151,7 @@ class NoticeController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $latestScan = ScanRun::latest('id')->first();
+        $latestScan = ScanRun::forPanel();
 
         return view('notices.index', compact(
             'notices',
