@@ -70,7 +70,7 @@ class BraveSupplierProviderTest extends TestCase
             $url = urldecode($request->url());
 
             return $request->hasHeader('X-Subscription-Token', 'brave-test-key')
-                && str_contains($url, 'country=RO')
+                && ! str_contains($url, 'country=')
                 && str_contains($url, 'search_lang=ro')
                 && str_contains($url, 'furnizor')
                 && ! str_contains($url, 'notiță personală');
@@ -98,7 +98,7 @@ class BraveSupplierProviderTest extends TestCase
     public function test_one_failed_market_returns_available_results_and_a_controlled_message(): void
     {
         Http::fake(function ($request) {
-            if (str_contains($request->url(), 'country=RO')) {
+            if (str_contains(urldecode($request->url()), 'search_lang=ro')) {
                 return Http::response([], 429);
             }
 

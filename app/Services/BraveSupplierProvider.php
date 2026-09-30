@@ -29,7 +29,7 @@ class BraveSupplierProvider implements SupplierSearchProvider
         }
 
         $markets = [
-            ['label' => 'România', 'query' => $this->romanianQuery($query), 'country' => 'RO', 'language' => 'ro'],
+            ['label' => 'România', 'query' => $this->romanianQuery($query), 'country' => null, 'language' => 'ro'],
             ['label' => 'Uniunea Europeană', 'query' => $this->europeanQuery($query), 'country' => null, 'language' => 'en'],
         ];
         $items = [];
