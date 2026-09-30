@@ -67,6 +67,19 @@ class RemoteSeapWorkerTest extends TestCase
         return ['family' => $family, 'status' => 'ok', 'data' => ['total' => $total ?? count($items), 'items' => $items]];
     }
 
+    private function cnDetails(int $id = 1, string $noticeNumber = 'CN1', string $description = 'Descriere completă'): array
+    {
+        return ['family' => 'CN', 'status' => 'ok', 'data' => [(string) $id => [
+            'data' => [
+                'general' => ['noticeId' => $id],
+                'section1' => ['contractingAuthority' => ['name' => 'Autoritate']],
+                'section21' => ['noticeNo' => $noticeNumber, 'shortDescription' => $description],
+                'section4' => ['procedureType' => ['text' => 'Procedură deschisă']],
+            ],
+            'errors' => [],
+        ]]];
+    }
+
     public function test_endpoint_requires_dedicated_token_https_and_enabled_server(): void
     {
         $this->postJson('https://localhost/api/seap-worker/claim')->assertUnauthorized();
@@ -150,15 +163,18 @@ class RemoteSeapWorkerTest extends TestCase
     public function test_original_importer_handles_pi_cn_scn_and_adv_without_server_http(): void
     {
         $run = $this->runFor(['PI', 'CN', 'SCN', 'ADV']);
-        for ($index = 0; $index < 5; $index++) {
+        for ($index = 0; $index < 6; $index++) {
             $batch = $this->claim();
             $plan = $batch['request'];
-            $payload = match ($plan['kind'] === 'pi_detail' ? 'detail' : $plan['family']) {
-                'PI' => $this->listing([['piNoticeId' => 1, 'title' => 'PI']], 'PI'),
-                'detail' => ['family' => 'PI', 'status' => 'ok', 'data' => []],
-                'CN' => $this->listing([['cNoticeID' => 1, 'contractTitle' => 'CN']], 'CN'),
-                'SCN' => $this->listing([['rfqInvitationId' => 1, 'title' => 'SCN']], 'SCN'),
-                'ADV' => $this->listing([$this->adv()]),
+            $payload = match ($plan['kind']) {
+                'pi_detail' => ['family' => 'PI', 'status' => 'ok', 'data' => []],
+                'procedure_details' => $this->cnDetails(),
+                default => match ($plan['family']) {
+                    'PI' => $this->listing([['piNoticeId' => 1, 'title' => 'PI']], 'PI'),
+                    'CN' => $this->listing([['cNoticeID' => 1, 'contractTitle' => 'CN']], 'CN'),
+                    'SCN' => $this->listing([['rfqInvitationId' => 1, 'title' => 'SCN']], 'SCN'),
+                    'ADV' => $this->listing([$this->adv()]),
+                },
             };
             $this->upload($batch, $payload)->assertOk();
         }
@@ -166,7 +182,50 @@ class RemoteSeapWorkerTest extends TestCase
         $this->assertDatabaseCount('notices', 4);
         $this->assertDatabaseCount('notice_revisions', 4);
         $this->assertEqualsCanonicalizing(['1', 'CN:1', 'SCN:1', 'ADV:1'], Notice::pluck('seap_id')->all());
+        $this->assertSame('Descriere completă', Notice::where('seap_id', 'CN:1')->sole()->description);
         Http::assertNothingSent();
+    }
+
+    public function test_cn_worker_retries_incomplete_details_without_duplicate_or_checkpoint_loss(): void
+    {
+        $run = $this->runFor(['CN']);
+        $listing = [['cNoticeID' => 100, 'contractTitle' => 'Contract nou']];
+        $this->upload($this->claim(), $this->listing($listing, 'CN'))->assertOk();
+
+        $detailBatch = $this->claim();
+        $this->assertSame('procedure_details', $detailBatch['request']['kind']);
+        $this->assertSame($listing, $detailBatch['request']['items']);
+        $this->upload($detailBatch, ['family' => 'CN', 'status' => 'ok', 'data' => ['100' => [
+            'data' => ['general' => ['noticeId' => 100]],
+            'errors' => ['CN 100 section1: indisponibil temporar'],
+        ]]])->assertOk();
+
+        $notice = Notice::sole();
+        $this->assertFalse($notice->raw_data['_details_complete']);
+        $this->assertNull($notice->description);
+        $this->assertSame(['100' => true], $run->fresh()->checkpoint['CN']['pending']);
+        $this->assertSame([], $run->fresh()->checkpoint['CN']['ids']);
+        $personal = $notice->personalEntries()->create(['user_id' => User::factory()->create()->id,
+            'is_saved' => true, 'personal_status' => 'analyzing', 'personal_notes' => 'Păstrează']);
+        $personalBefore = $personal->fresh()->toArray();
+
+        $this->travel(361)->minutes();
+        $retry = $this->claim();
+        $this->assertSame('procedure_details', $retry['request']['kind']);
+        $this->assertSame($listing, $retry['request']['items']);
+        $this->upload($retry, $this->cnDetails(100, 'CN100'))->assertOk();
+
+        $notice->refresh();
+        $source = $notice->sources()->where('source', 'seap')->sole();
+        $this->assertSame('Descriere completă', $notice->description);
+        $this->assertTrue($notice->raw_data['_details_complete']);
+        $this->assertTrue($source->payload['_details_complete']);
+        $this->assertEqualsCanonicalizing(['general', 'section1', 'section21', 'section4'], array_values(array_intersect(array_keys($notice->raw_data), ['general', 'section1', 'section21', 'section4'])));
+        $this->assertSame(hash('sha256', json_encode($source->normalized_data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)), $source->fingerprint);
+        $this->assertSame($personalBefore, $personal->fresh()->toArray());
+        $this->assertSame('completed', $run->fresh()->status);
+        $this->assertDatabaseCount('notices', 1);
+        $this->assertDatabaseCount('notice_sources', 1);
     }
 
     #[TestWith(['403', 60, 360])]
@@ -426,35 +485,38 @@ class RemoteSeapWorkerTest extends TestCase
         Queue::assertNothingPushed();
         $batch = $this->claim();
         $this->assertSame('CN', $batch['request']['family']);
-        $this->assertSame(10, $batch['request']['page']);
-        $this->assertSame('2026-08-20T00:00:00+03:00', $batch['request']['from']);
+        $this->assertSame('procedure_details', $batch['request']['kind']);
+        $this->assertSame([['cNoticeID' => 179, 'noticeNo' => 'CN179', 'contractTitle' => 'CN 179']], $batch['request']['items']);
         $this->assertSame('running', $run->fresh()->status);
         Http::assertNothingSent();
 
         config(['services.seap_worker.server' => false]);
-        $rows = array_map(fn ($id) => ['cNoticeID' => $id, 'noticeNo' => 'CN'.$id, 'contractTitle' => 'CN '.$id], range(181, 189));
-        Http::fake(['*PUBLICCNotice/GetAll/' => Http::response(['total' => 189, 'items' => $rows])]);
+        Http::fake([
+            '*ComboPub/getNoticeGeneralInfo/*' => Http::response(['noticeId' => 179]),
+            '*NoticeCommon/GetSection1View/*' => Http::response(['contractingAuthority' => ['name' => 'Autoritate']]),
+            '*NoticeCommon/GetSection21View/*' => Http::response(['noticeNo' => 'CN179', 'shortDescription' => 'Descriere 179']),
+            '*NoticeCommon/GetSection4View/*' => Http::response(['procedureType' => ['text' => 'Procedură deschisă']]),
+        ]);
         $response = SeapWorkerClient::execute(app(SeapClient::class), $batch['request']);
-        Http::assertSentCount(1);
+        Http::assertSentCount(4);
         config(['services.seap_worker.server' => true]);
         $payload = ['family' => 'CN', 'status' => 'ok', 'data' => $response];
         $receipt = $this->upload($batch, $payload)->assertOk()->json();
         $checkpoint = $run->fresh()->checkpoint;
-        $this->assertSame(189, $checkpoint['CN']['stats']['processed']);
-        $this->assertContains('2026-08-20T00:00:00+03:00', $checkpoint['CN']['windows']);
+        $this->assertSame(179, $checkpoint['CN']['stats']['processed']);
+        $this->assertNotContains('2026-08-20T00:00:00+03:00', $checkpoint['CN']['windows']);
+        $this->assertSame(9, $checkpoint['CN']['cursor']['page']);
         $this->assertSame($piBefore, $checkpoint['PI']);
         $this->assertSame($tedBefore, $run->fresh()->results['ted']);
-        $this->assertDatabaseCount('notices', 11);
-        $this->assertDatabaseCount('notice_sources', 11);
-        $this->assertDatabaseCount('notice_revisions', 11);
+        $this->assertDatabaseCount('notices', 1);
+        $this->assertSame('Descriere 179', Notice::sole()->description);
         $this->assertSame($receipt, $this->upload($batch, $payload)->assertOk()->json());
         $this->assertSame($checkpoint, $run->fresh()->checkpoint);
-        $this->assertDatabaseCount('notice_revisions', 11);
         $next = $this->claim();
         $this->assertNotSame($batch['batch_id'], $next['batch_id']);
-        $this->assertSame('2026-08-21T00:00:00+03:00', $next['request']['from']);
-        $this->assertSame(0, $next['request']['page']);
+        $this->assertSame('procedure_details', $next['request']['kind']);
+        $this->assertSame(180, $next['request']['items'][0]['cNoticeID']);
         $this->assertDatabaseCount('scan_runs', 1);
-        Http::assertSentCount(1);
+        Http::assertSentCount(4);
     }
 }

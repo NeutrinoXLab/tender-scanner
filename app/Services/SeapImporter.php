@@ -27,6 +27,8 @@ class SeapImporter
         $requestedFrom = $from;
         $requestedTo = $to;
         foreach ($families as $family) {
+            $requiresWorkerCnDetails = $family === 'CN' && $this->client instanceof SeapWorkerClient;
+            $fetchProcedureDetails = $requiresWorkerCnDetails || config('services.seap.fetch_procedure_details', false);
             $range = $context->runId !== null ? (ScanRun::findOrFail($context->runId)->checkpoint['_ranges'][$family] ?? []) : [];
             $from = $range['from'] ?? $requestedFrom;
             $to = $range['to'] ?? $requestedTo;
@@ -96,7 +98,7 @@ class SeapImporter
                     }
                     if (! $backfill && ! $probe && $limit === 0 && in_array($family, ['CN', 'SCN'], true) && $start !== null
                         && $pending === []
-                        && ! config('services.seap.fetch_procedure_details', false)
+                        && ! $fetchProcedureDetails
                         && substr($start, 0, 10) !== $refreshDay
                         && app(SeapBulkSync::class)->covers(substr($start, 0, 10))) {
                         $completedWindows[] = $start;
@@ -209,12 +211,29 @@ class SeapImporter
                                     if ($limit > 0 || config('services.seap.fetch_adv_details', false)) {
                                         $payload = $this->client->getAdvNoticeDetails((int) $id);
                                     }
-                                } elseif ($limit > 0 || config('services.seap.fetch_procedure_details', false)) {
+                                } elseif ($limit > 0 || $fetchProcedureDetails) {
                                     $details = $this->client->getProcedureDetails($family, [$item]);
                                     $payload = $details[$id]['data'] ?? [];
                                     foreach ($details[$id]['errors'] ?? [] as $error) {
                                         $stats['detail_errors']++;
                                         $this->error($stats, $error);
+                                    }
+                                    if ($requiresWorkerCnDetails) {
+                                        $missingSections = array_diff(['general', 'section1', 'section21', 'section4'], array_keys($payload));
+                                        $description = data_get($payload, 'section21.shortDescription');
+                                        $noticeNumber = data_get($payload, 'section21.noticeNo');
+                                        if ($missingSections !== []) {
+                                            $stats['detail_errors']++;
+                                            $this->error($stats, 'CN '.$id.': lipsesc secțiunile '.implode(', ', $missingSections).'.');
+                                        }
+                                        if (! is_string($description) || trim(strip_tags($description)) === '') {
+                                            $stats['detail_errors']++;
+                                            $this->error($stats, 'CN '.$id.': descrierea nu este disponibilă în section21.');
+                                        }
+                                        if (! is_string($noticeNumber) || ! preg_match('/^CN\d+$/', $noticeNumber)) {
+                                            $stats['detail_errors']++;
+                                            $this->error($stats, 'CN '.$id.': section21 nu confirmă numărul anunțului.');
+                                        }
                                     }
                                 }
                                 $attributes = $this->normalizer->normalize($family, $item, $payload);
@@ -229,10 +248,13 @@ class SeapImporter
                                 $externalId = $family === 'PI' ? $id : $family.':'.$id;
                                 $before = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
                                 $detailsRequested = $family === 'PI' || $limit > 0 || ($family === 'ADV'
-                                    ? config('services.seap.fetch_adv_details', false) : config('services.seap.fetch_procedure_details', false));
-                                $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => $detailsRequested && count($stats['errors']) === $itemErrors]);
+                                    ? config('services.seap.fetch_adv_details', false) : $fetchProcedureDetails);
+                                $detailsComplete = $detailsRequested && count($stats['errors']) === $itemErrors;
+                                $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => $detailsComplete]);
                                 $after = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
-                                $recordOutcome($id, $notice->wasRecentlyCreated ? 'new' : ($before !== $after ? 'updated' : 'unchanged'));
+                                if (! $requiresWorkerCnDetails || $detailsComplete) {
+                                    $recordOutcome($id, $notice->wasRecentlyCreated ? 'new' : ($before !== $after ? 'updated' : 'unchanged'));
+                                }
                                 if (count($stats['errors']) === $itemErrors) {
                                     $completedIds[$id] = true;
                                 }
