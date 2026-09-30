@@ -86,11 +86,11 @@ class SeapImporter
                     throw new SeapAccessRestricted('Familie neinterogata: accesul SEAP este restrictionat.');
                 }
                 $windows = $probe || $limit > 0 ? [[
-                    $from ? CarbonImmutable::parse($from, 'Europe/Bucharest')->startOfDay()->toIso8601String() : null,
-                    $to ? CarbonImmutable::parse($to, 'Europe/Bucharest')->endOfDay()->toIso8601String() : null,
-                ]] : $this->windows($from, $to);
+                    $from ? CarbonImmutable::parse($from, 'Europe/Bucharest')->startOfDay()->format($family === 'SCN' ? 'Y-m-d H:i:s' : DATE_ATOM) : null,
+                    $to ? $this->windowEnd($family, CarbonImmutable::parse($to, 'Europe/Bucharest')) : null,
+                ]] : $this->windows($family, $from, $to);
                 if ($refreshDay !== null && $family !== 'PI') {
-                    $windows = array_merge($windows, $this->windows($refreshDay, $refreshDay));
+                    $windows = array_merge($windows, $this->windows($family, $refreshDay, $refreshDay));
                 }
                 foreach ($windows as [$start, $end]) {
                     if (in_array($start, $completedWindows, true)) {
@@ -327,17 +327,24 @@ class SeapImporter
     }
 
     /** @return array<array{?string, ?string}> */
-    private function windows(?string $from, ?string $to): array
+    private function windows(string $family, ?string $from, ?string $to): array
     {
         if ($from === null || $to === null) {
             return [[$from, $to]];
         }
         $windows = [];
         for ($day = CarbonImmutable::parse($from, 'Europe/Bucharest'); $day->toDateString() <= $to; $day = $day->addDay()) {
-            $windows[] = [$day->startOfDay()->toIso8601String(), $day->endOfDay()->toIso8601String()];
+            $windows[] = [$day->startOfDay()->format($family === 'SCN' ? 'Y-m-d H:i:s' : DATE_ATOM), $this->windowEnd($family, $day)];
         }
 
         return $windows;
+    }
+
+    private function windowEnd(string $family, CarbonImmutable $day): string
+    {
+        return $family === 'SCN'
+            ? $day->startOfDay()->addDay()->format('Y-m-d H:i:s')
+            : $day->endOfDay()->toIso8601String();
     }
 
     private function error(array &$stats, string $message): void

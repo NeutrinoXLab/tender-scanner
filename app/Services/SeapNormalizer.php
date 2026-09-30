@@ -46,7 +46,8 @@ class SeapNormalizer
                 'contract_duration_months' => $lot['monthDuration'] ?? null,
                 'is_eu_funded' => $lot['euProgrRelated'] ?? null,
                 'funding_program' => $this->text($lot['sysEuropeanFund'] ?? null) ?? ($lot['communityProgramReference'] ?? null),
-                'status' => data_get($item, 'sysProcedureState.text') ?? data_get($item, 'sysNoticeState.text'),
+                'status' => $family === 'SCN' ? $this->scnStatus($item)
+                    : (data_get($item, 'sysProcedureState.text') ?? data_get($item, 'sysNoticeState.text')),
             ];
         }
         $config = SeapClient::FAMILIES[$family];
@@ -71,6 +72,29 @@ class SeapNormalizer
         $attributes['seap_metadata'] = $metadata;
 
         return $attributes;
+    }
+
+    private function scnStatus(array $item): ?string
+    {
+        foreach ([
+            ['field' => 'sysProcedureState', 'key' => 'InProgress', 'id' => 2, 'label' => 'În desfășurare'],
+            ['field' => 'sysNoticeState', 'key' => 'Published', 'id' => 2, 'label' => 'Publicat'],
+        ] as $state) {
+            $text = data_get($item, $state['field'].'.text');
+            if (is_string($text) && trim($text) !== '') {
+                return trim($text);
+            }
+
+            $key = data_get($item, $state['field'].'.localeKey') ?? data_get($item, $state['field'].'.key');
+            if ($key === $state['key'] || (is_string($key) && str_ends_with($key, '.'.$state['key']))) {
+                return $state['label'];
+            }
+            if ((string) data_get($item, $state['field'].'.id') === (string) $state['id']) {
+                return $state['label'];
+            }
+        }
+
+        return null;
     }
 
     private function text(mixed $value): ?string

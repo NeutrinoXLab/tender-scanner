@@ -166,9 +166,10 @@ class SeapStabilizationTest extends TestCase
         $this->assertSame('2026-09-11', $run->date_from);
         $this->assertArrayNotHasKey('_refresh_day', $run->checkpoint);
         foreach (['PUBLICPINotice', 'PUBLICCNotice', 'PublicRFQInvitation'] as $endpoint) {
+            $isScn = $endpoint === 'PublicRFQInvitation';
             Http::assertSent(fn ($request) => str_contains($request->url(), $endpoint.'/GetAll/')
-                && $request['publicationDateFrom'] === '2026-09-11T00:00:00+03:00'
-                && $request['publicationDateTo'] === '2026-09-11T23:59:59+03:00');
+                && $request['publicationDateFrom'] === ($isScn ? '2026-09-11 00:00:00' : '2026-09-11T00:00:00+03:00')
+                && $request['publicationDateTo'] === ($isScn ? '2026-09-12 00:00:00' : '2026-09-11T23:59:59+03:00'));
         }
         $this->getJson('/scans/latest')->assertJsonPath('results.seap.families.SCN.refresh_day', null);
         Http::assertNotSent(fn ($request) => str_starts_with($request['publicationDateFrom'] ?? $request['publicationDateStart'] ?? '', '2026-08'));

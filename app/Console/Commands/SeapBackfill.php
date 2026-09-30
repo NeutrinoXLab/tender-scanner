@@ -83,7 +83,8 @@ class SeapBackfill extends Command
                     return $existing ?? ScanRun::create(['mode' => 'backfill', 'status' => 'pending',
                         'date_from' => $data['from'], 'date_to' => $data['to'], 'before_notice_id' => Notice::max('id') ?? 0,
                         'checkpoint' => ['_worker_ready' => true, '_families' => [$family],
-                            '_ranges' => [$family => ['from' => $data['from'], 'to' => $data['to']]]],
+                            '_ranges' => [$family => ['from' => $data['from'], 'to' => $data['to']]],
+                            ...($family === 'SCN' ? ['_scn_recovery_baseline' => $this->scnCount($data['from'], $data['to'])] : [])],
                         'message' => 'Backfill în așteptare; sincronizarea normală restantă are prioritate.']);
                 }));
                 $this->showProgress($run);
@@ -109,6 +110,10 @@ class SeapBackfill extends Command
         $this->line('Suspendat explicit: '.(($run->checkpoint['_backfill_hold'] ?? false) ? 'da' : 'nu'));
         $this->line('Ultima zi completă: '.($windows === [] ? '—' : end($windows)).'; cursor zi/pagină (index 0): '.($saved['cursor']['day'] ?? '—').'/'.($saved['cursor']['page'] ?? '—'));
         $this->line('Verificate: '.($stats['processed'] ?? 0).'; noi: '.($stats['new'] ?? 0).'; actualizate: '.($stats['updated'] ?? 0));
+        if ($family === 'SCN' && isset($run->checkpoint['_scn_recovery_baseline'])) {
+            $this->line('SCN existente la începutul recuperării: '.$run->checkpoint['_scn_recovery_baseline'].'; acum în interval: '
+                .$this->scnCount($run->date_from, $run->date_to).'.');
+        }
         $this->line('Următorul moment permis pentru acest run: '.($run->checkpoint['_next_batch_at'] ?? 'la eliberarea cozii'));
         $this->line('Erori: '.implode(' | ', $stats['errors'] ?? []));
         $prior = ScanRun::where('active_key', 'manual')->first() ?? ScanRun::oldestIncomplete() ?? ScanRun::nextBackfill();
@@ -127,5 +132,13 @@ class SeapBackfill extends Command
         return ScanRun::where('mode', 'backfill')->where('date_from', $data['from'])->where('date_to', $data['to'])
             ->where('status', '!=', 'cancelled')->orderBy('id')->get()
             ->first(fn (ScanRun $run): bool => $run->families() === [$data['family']]);
+    }
+
+    private function scnCount(string $from, string $to): int
+    {
+        $end = CarbonImmutable::parse($to, 'Europe/Bucharest')->addDay()->format('Y-m-d').' 00:00:00';
+
+        return Notice::where('seap_id', 'like', 'SCN:%')->where('publication_date', '>=', $from.' 00:00:00')
+            ->where('publication_date', '<', $end)->count();
     }
 }

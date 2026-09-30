@@ -7,6 +7,7 @@ use App\Models\ScanRun;
 use App\Models\User;
 use App\Services\ScanContext;
 use App\Services\TedClient;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -62,8 +63,9 @@ class ManualScanFamiliesTest extends TestCase
         foreach (self::ENDPOINTS as $family => $endpoint) {
             foreach (['2026-09-09', '2026-09-10'] as $day) {
                 Http::assertSent(fn (Request $request) => $request->url() === $endpoint && $request->method() === 'POST'
-                    && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === $day.'T00:00:00+03:00'
-                    && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === $day.'T23:59:59+03:00'
+                    && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === ($family === 'SCN' ? $day.' 00:00:00' : $day.'T00:00:00+03:00')
+                    && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === ($family === 'SCN'
+                        ? CarbonImmutable::parse($day)->addDay()->toDateString().' 00:00:00' : $day.'T23:59:59+03:00')
                     && $request['pageSize'] === ($family === 'ADV' ? 100 : 18) && $request['pageIndex'] === 0);
             }
             $this->assertSame($family === 'ADV' ? 0 : 1, $run->results['seap']['families'][$family]['processed']);
@@ -85,8 +87,9 @@ class ManualScanFamiliesTest extends TestCase
         Http::assertSentCount(4);
         foreach (self::ENDPOINTS as $family => $endpoint) {
             Http::assertSent(fn (Request $request) => $request->url() === $endpoint && $request['pageSize'] === ($family === 'ADV' ? 5 : 1) && $request['pageIndex'] === 0
-                && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === '2026-08-03T00:00:00+03:00'
-                && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === '2026-09-11T23:59:59+03:00');
+                && $request[$family === 'ADV' ? 'publicationDateStart' : 'publicationDateFrom'] === ($family === 'SCN' ? '2026-08-03 00:00:00' : '2026-08-03T00:00:00+03:00')
+                && $request[$family === 'ADV' ? 'publicationDateEnd' : 'publicationDateTo'] === ($family === 'SCN'
+                    ? '2026-09-12 00:00:00' : '2026-09-11T23:59:59+03:00'));
             $this->assertSame('probe_ok', $run->results['seap']['families'][$family]['status']);
             $this->assertFalse($run->results['seap']['families'][$family]['complete']);
         }
