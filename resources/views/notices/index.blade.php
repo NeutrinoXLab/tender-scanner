@@ -24,6 +24,9 @@
                 <a href="{{ route('notices.index', array_merge(request()->except($value === 'ted' ? ['page', 'source', 'family'] : ['page', 'source']), $value === '' ? [] : ['source' => $value])) }}"
                    @if (($source ?? '') === $value) aria-current="page" @endif
                    class="rounded-lg border px-4 py-2 text-sm font-medium {{ ($source ?? '') === $value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50' }}">{{ $label }}</a>
+                @if ($value === 'ted')
+                    <x-info-tooltip label="TED">Anunțuri din sursa europeană TED, importate și păstrate distinct de anunțurile SEAP.</x-info-tooltip>
+                @endif
             @endforeach
         </nav>
 
@@ -32,6 +35,11 @@
                 <a href="{{ route('notices.index', array_merge(request()->except(['page', 'collection']), ['collection' => $value])) }}"
                    @if ($collection === $value) aria-current="page" @endif
                    class="rounded-lg border px-4 py-2 text-sm font-medium {{ $collection === $value ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50' }}">{{ $label }}</a>
+                @if ($value === 'saved')
+                    <x-info-tooltip label="Salvate">Anunțurile pe care le-ai marcat pentru urmărire.</x-info-tooltip>
+                @elseif ($value === 'ignored')
+                    <x-info-tooltip label="Ignorate">Anunțurile pe care ai ales să nu le urmărești. Marcarea este personală și poate fi anulată oricând.</x-info-tooltip>
+                @endif
             @endforeach
         </nav>
         @if ($collection !== 'all')
@@ -60,13 +68,21 @@
                             @endforeach
                         </select>
                         <p class="text-xs text-gray-500 mt-1">ADV sunt anunțuri de publicitate. Achizițiile DA/DAN finalizate rămân în istoricul furnizorilor.</p>
+                        <div class="family-info-list" aria-label="Explicații familii SEAP">
+                            <span>PI <x-info-tooltip label="PI">Anunțuri de intenție sau informare. Nu înseamnă automat că procedura este deschisă participării.</x-info-tooltip></span>
+                            <span>CN <x-info-tooltip label="CN">Anunțuri de participare și proceduri de achiziție. Tender Scanner preia automat detaliile disponibile din SEAP.</x-info-tooltip></span>
+                            <span>SCN <x-info-tooltip label="SCN">Anunțuri de participare simplificate din SEAP. Filtrul poate fi folosit când astfel de anunțuri există în catalog.</x-info-tooltip></span>
+                        </div>
                     </div>
                 @endif
                 @if ($errors->any())
                     <div role="alert" class="text-sm text-red-700 mb-3">@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>
                 @endif
                 <div class="mb-4">
-                    <label for="personal-status-filter" class="block text-sm font-medium text-gray-700 mb-1">Status personal</label>
+                    <div class="flex items-center mb-1">
+                        <label for="personal-status-filter" class="block text-sm font-medium text-gray-700">Status personal</label>
+                        <x-info-tooltip label="Status personal">Etapa ta personală: Nouă, Analizez, Cer ofertă, Particip sau Renunț. Nu schimbă statusul procedurii.</x-info-tooltip>
+                    </div>
                     <select name="personal_status" id="personal-status-filter" class="w-full sm:max-w-xs border border-gray-300 bg-white p-2 rounded-lg">
                         <option value="">Toate etapele personale</option>
                         @foreach (\App\Models\Notice::PERSONAL_STATUSES as $value => $label)
@@ -75,10 +91,13 @@
                     </select>
                 </div>
                 </div>
-                <label class="block text-sm text-gray-700 mb-4">
-                    <input type="checkbox" name="seap_history" value="1" @checked(request()->boolean('seap_history'))>
-                    Include istoricul SEAP și procedurile fără termen de participare confirmat
-                </label>
+                <div class="flex items-center mb-4">
+                    <label class="block text-sm text-gray-700">
+                        <input type="checkbox" name="seap_history" value="1" @checked(request()->boolean('seap_history'))>
+                        Include istoricul SEAP și procedurile fără termen de participare confirmat
+                    </label>
+                    <x-info-tooltip label="Istoricul SEAP">Include anunțurile SEAP expirate, inactive sau fără termen confirmat. Nu schimbă datele importate.</x-info-tooltip>
+                </div>
                 <div class="mb-5">
                     <label
                         for="search"

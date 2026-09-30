@@ -3,7 +3,7 @@
 @section('content')
         <a class="text-blue-600 hover:underline" href="{{ route('notices.show', $notice) }}">← Înapoi la licitație</a>
         <header class="my-6">
-            <h1 class="text-2xl font-bold text-gray-900">🔎 Caută furnizori</h1>
+            <h1 class="text-2xl font-bold text-gray-900">🔎 Caută furnizori <x-info-tooltip label="Caută furnizori" align="start">Aplicația pregătește termenii de căutare, dar nu există încă o sursă live de furnizori conectată.</x-info-tooltip></h1>
             <p class="mt-3 font-medium text-gray-800 break-words">{{ $notice->notice_number }} · {{ $notice->title }}</p>
             <div class="flex flex-col sm:flex-row sm:gap-6 mt-2 text-sm text-gray-600">
                 <p>CPV: {{ $notice->cpv_code ?: '—' }}</p>
@@ -29,7 +29,10 @@
             @endif
             <form method="GET" action="{{ route('notices.suppliers', $notice) }}">
                 <input type="hidden" name="term" value="{{ $term }}">
-                <label for="supplier-query" class="block text-sm font-medium mb-1">Produs sau termeni de căutare</label>
+                <div class="flex items-center mb-1">
+                    <label for="supplier-query" class="block text-sm font-medium">Produs sau termeni de căutare</label>
+                    <x-info-tooltip label="Termeni de căutare furnizori">Sunt generați din informațiile anunțului și pot fi modificați înainte de căutare.</x-info-tooltip>
+                </div>
                 <div class="flex flex-col sm:flex-row gap-3">
                     <input id="supplier-query" name="q" type="text" value="{{ old('q', $query) }}" maxlength="240" required class="min-w-0 flex-1 w-full rounded-lg border border-gray-300 p-3">
                     <button type="submit" class="rounded-lg bg-blue-600 text-white font-semibold px-6 py-3 hover:bg-blue-700">Caută</button>

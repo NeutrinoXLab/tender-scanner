@@ -1,4 +1,26 @@
-//
+const infoTooltips = [...document.querySelectorAll('[data-info-tooltip]')];
+const closeInfoTooltip = (tooltip) => {
+    tooltip.classList.remove('is-open');
+    tooltip.querySelector('[data-info-tooltip-trigger]')?.setAttribute('aria-expanded', 'false');
+};
+for (const tooltip of infoTooltips) {
+    const trigger = tooltip.querySelector('[data-info-tooltip-trigger]');
+    trigger?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const willOpen = !tooltip.classList.contains('is-open');
+        infoTooltips.forEach(closeInfoTooltip);
+        if (willOpen) {
+            tooltip.classList.add('is-open');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+    });
+}
+document.addEventListener('click', () => infoTooltips.forEach(closeInfoTooltip));
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        infoTooltips.forEach(closeInfoTooltip);
+    }
+});
 
 const panel = document.getElementById('manual-scan');
 if (panel) {

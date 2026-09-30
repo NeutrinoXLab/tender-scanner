@@ -12,7 +12,16 @@
                 <label class="text-sm">Până la <input type="date" name="to" class="border rounded p-1" aria-label="Scanare până la"></label>
             </div>
             <p class="text-xs text-gray-500 mb-2">Fără date: continuăm sincronizarea incompletă sau verificăm perioada nouă, inclusiv ultima zi sincronizată. SEAP procesează maximum {{ max(1, (int) config('services.seap.batch_size', 100)) }} anunțuri per lot; TED are import separat de această limită.</p>
-            <button id="manual-scan-button" type="submit" name="mode" value="full" class="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Scanează acum</button>
+            <span class="inline-flex items-center">
+                <button id="manual-scan-button" type="submit" name="mode" value="full" class="bg-blue-600 text-white px-5 py-2 rounded-lg disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Scanează acum</button>
+                <x-info-tooltip label="Scanează acum" align="end">
+                    @if (config('services.seap_worker.server'))
+                        Pornește sau continuă sincronizarea: TED este verificat de aplicație, iar PI, CN, SCN și ADV sunt procesate în loturi prin workerul SEAP autorizat.
+                    @else
+                        Pornește sau continuă sincronizarea configurată pentru TED și familiile SEAP PI, CN, SCN și ADV.
+                    @endif
+                </x-info-tooltip>
+            </span>
             <button id="manual-scan-probe" type="submit" name="mode" value="probe" class="border rounded-lg px-4 py-2 disabled:opacity-50" @disabled(in_array($latestScan?->status, ['queued', 'running'], true))>Testează PI/CN/SCN/ADV fără import</button>
             <button id="manual-scan-resume" type="submit" name="resume_id" value="{{ $latestScan?->id }}" class="border rounded-lg px-4 py-2" @if (!($scanSummary['can_resume'] ?? false)) hidden @endif>Continuă scanarea</button>
         </form>
