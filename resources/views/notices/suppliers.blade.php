@@ -3,7 +3,7 @@
 @section('content')
         <a class="text-blue-600 hover:underline" href="{{ route('notices.show', $notice) }}">← Înapoi la licitație</a>
         <header class="my-6">
-            <h1 class="text-2xl font-bold text-gray-900">🔎 Caută furnizori <x-info-tooltip label="Caută furnizori" align="start">Aplicația pregătește termenii de căutare, dar nu există încă o sursă live de furnizori conectată.</x-info-tooltip></h1>
+            <h1 class="text-2xl font-bold text-gray-900">🔎 Caută furnizori <x-info-tooltip label="Caută furnizori" align="start">Aplicația caută pe web furnizori din România și Uniunea Europeană folosind termenii selectați.</x-info-tooltip></h1>
             <p class="mt-3 font-medium text-gray-800 break-words">{{ $notice->notice_number }} · {{ $notice->title }}</p>
             <div class="flex flex-col sm:flex-row sm:gap-6 mt-2 text-sm text-gray-600">
                 <p>CPV: {{ $notice->cpv_code ?: '—' }}</p>
@@ -73,24 +73,29 @@
         @elseif ($result !== null && $result->status === 'ok')
             <section class="bg-white border rounded-lg p-5" aria-label="Rezultate furnizori">
                 <h2 class="text-lg font-semibold mb-4">Rezultate furnizori</h2>
+                @if ($result->message)
+                    <p role="status" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 mb-4">{{ $result->message }}</p>
+                @endif
                 @if ($result->items === [])
                     <p role="status" class="text-gray-600">Nu au fost găsiți furnizori pentru această căutare. Încearcă termeni mai preciși sau o altă formulare.</p>
                 @else
-                    <p class="text-sm text-gray-500 mb-4">{{ count($result->items) }} rezultate primite de la sursa conectată. Potrivirea, când există, este furnizată de aceasta.</p>
+                    <p class="text-sm text-gray-500 mb-4">{{ count($result->items) }} rezultate web. Verifică direct pagina furnizorului; apariția în listă nu reprezintă o recomandare sau confirmare a eligibilității.</p>
                     <div class="space-y-4">
                         @foreach ($result->items as $item)
                             <article class="rounded-lg border p-4">
                                 <h3 class="font-semibold break-words">{{ $item['product'] ?? '—' }}</h3>
                                 <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
                                     <div><dt class="text-gray-500">Furnizor</dt><dd class="break-words">{{ $item['supplier'] ?? '—' }}</dd></div>
-                                    <div><dt class="text-gray-500">Preț</dt><dd>{{ $item['price'] ?? '—' }} {{ $item['price'] !== null ? ($item['currency'] ?? '') : '' }}</dd></div>
-                                    <div><dt class="text-gray-500">Disponibilitate</dt><dd>{{ $item['availability'] ?? '—' }}</dd></div>
-                                    <div><dt class="text-gray-500">Potrivire</dt><dd>{{ $item['match_score'] !== null ? round($item['match_score'] * 100).'%' : '—' }}</dd></div>
+                                    <div><dt class="text-gray-500">Țară</dt><dd>{{ $item['country'] ?? 'Nedeterminată' }}</dd></div>
+                                    <div><dt class="text-gray-500">Sursa</dt><dd>{{ $item['source'] ?? '—' }}</dd></div>
                                 </dl>
+                                @if ($item['snippet'] ?? null)
+                                    <p class="text-sm mt-3 text-gray-700">{{ $item['snippet'] }}</p>
+                                @endif
                                 @if ($item['url'])
-                                    <a href="{{ $item['url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 text-sm text-blue-600 hover:underline">Vezi produsul ↗</a>
+                                    <a href="{{ $item['url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block mt-3 text-sm text-blue-600 hover:underline">Deschide pagina furnizorului ↗</a>
                                 @else
-                                    <p class="text-sm mt-3 text-gray-500">Link produs: —</p>
+                                    <p class="text-sm mt-3 text-gray-500">Link furnizor: —</p>
                                 @endif
                             </article>
                         @endforeach

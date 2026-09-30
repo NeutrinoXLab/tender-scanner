@@ -15,6 +15,15 @@ return [
         'token' => env('PRICE_SCANNER_TOKEN'),
     ],
 
+    'brave_search' => [
+        'key' => env('BRAVE_SEARCH_API_KEY'),
+        'endpoint' => env('BRAVE_SEARCH_ENDPOINT', 'https://api.search.brave.com/res/v1/web/search'),
+        'results_per_market' => (int) env('BRAVE_SEARCH_RESULTS_PER_MARKET', 10),
+        'cache_ttl' => (int) env('BRAVE_SEARCH_CACHE_TTL', 86400),
+        'connect_timeout' => (int) env('BRAVE_SEARCH_CONNECT_TIMEOUT', 3),
+        'timeout' => (int) env('BRAVE_SEARCH_TIMEOUT', 10),
+    ],
+
     'seap' => [
         'fetch_procedure_details' => (bool) env('SEAP_FETCH_PROCEDURE_DETAILS', false),
         'fetch_adv_details' => (bool) env('SEAP_FETCH_ADV_DETAILS', false),

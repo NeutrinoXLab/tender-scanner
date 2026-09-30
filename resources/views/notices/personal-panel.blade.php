@@ -18,7 +18,7 @@
         </form>
         <span class="inline-flex items-center">
             <a href="{{ route('notices.suppliers', $notice) }}" class="inline-flex justify-center items-center rounded-lg bg-blue-600 px-5 py-2.5 text-white font-semibold hover:bg-blue-700">🔎 Caută furnizori</a>
-            <x-info-tooltip label="Caută furnizori" align="end">Aplicația pregătește termenii de căutare, dar nu există încă o sursă live de furnizori conectată.</x-info-tooltip>
+            <x-info-tooltip label="Caută furnizori" align="end">Aplicația caută pe web furnizori din România și Uniunea Europeană folosind termenii selectați.</x-info-tooltip>
         </span>
         <form method="POST" action="{{ route('notices.personal.update', $notice) }}">
             @csrf @method('PATCH')

@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
-use App\Services\PriceScannerSupplierProvider;
+use App\Services\BraveSupplierProvider;
 use App\Services\ScanContext;
 use App\Services\SupplierSearchProvider;
 use Illuminate\Support\Facades\Gate;
@@ -17,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ScanContext::class);
-        $this->app->bind(SupplierSearchProvider::class, PriceScannerSupplierProvider::class);
+        $this->app->bind(SupplierSearchProvider::class, BraveSupplierProvider::class);
     }
 
     /**

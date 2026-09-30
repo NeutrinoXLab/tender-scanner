@@ -45,12 +45,12 @@ class InfoTooltipTest extends TestCase
     public function test_notice_workspace_explains_personal_notes_and_supplier_search(): void
     {
         $this->withoutVite();
-        config(['services.price_scanner.search_url' => null]);
+        config(['services.brave_search.key' => null]);
         $user = User::factory()->create();
         $notice = Notice::create(['seap_id' => 'tooltip-notice', 'title' => 'Echipamente IT']);
 
         $this->actingAs($user)->get(route('notices.show', $notice))->assertOk()
-            ->assertSee('Aplicația pregătește termenii de căutare, dar nu există încă o sursă live de furnizori conectată.')
+            ->assertSee('Aplicația caută pe web furnizori din România și Uniunea Europeană folosind termenii selectați.')
             ->assertSee('Sunt personale, vizibile doar în contul tău și rămân asociate anunțului.');
 
         $this->get(route('notices.suppliers', $notice))->assertOk()
