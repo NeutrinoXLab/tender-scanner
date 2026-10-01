@@ -54,6 +54,21 @@ class SeapBackfillTest extends TestCase
         $this->withToken(config('services.seap_worker.token'))->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
     }
 
+    private function normalRunWithOnlyAdvIncomplete(): ScanRun
+    {
+        return ScanRun::create(['mode' => 'full', 'status' => 'partial', 'date_from' => '2026-08-01', 'date_to' => '2026-08-01',
+            'checkpoint' => ['_worker_ready' => true, '_families' => ['PI', 'CN', 'SCN', 'ADV'],
+                '_ranges' => ['PI' => ['from' => '2026-08-01', 'to' => '2026-08-01'],
+                    'CN' => ['from' => '2026-08-01', 'to' => '2026-08-01'], 'SCN' => ['from' => '2026-08-01', 'to' => '2026-08-01'],
+                    'ADV' => ['from' => '2026-08-01', 'to' => '2026-08-01']]],
+            'results' => ['seap' => ['status' => 'error', 'errors' => ['ADV indisponibil'], 'families' => [
+                'PI' => ['status' => 'completed', 'complete' => true, 'errors' => []],
+                'CN' => ['status' => 'completed', 'complete' => true, 'errors' => []],
+                'SCN' => ['status' => 'completed', 'complete' => true, 'errors' => []],
+                'ADV' => ['status' => 'error', 'complete' => false, 'errors' => ['Workerul SEAP s-a oprit: unavailable.']],
+            ]]]]);
+    }
+
     private function upload(array $batch, array $items = [], string $status = 'ok', ?int $total = null): array
     {
         return $this->withToken(config('services.seap_worker.token'))->postJson('https://localhost/api/seap-worker/batches/'.$batch['batch_id'],
@@ -205,6 +220,65 @@ class SeapBackfillTest extends TestCase
         $this->assertSame($batch, $this->claim());
     }
 
+    public function test_adv_unavailable_cooldown_allows_independent_scn_backfill_after_global_interval(): void
+    {
+        $normal = $this->normalRunWithOnlyAdvIncomplete();
+        $advBatch = $this->claim();
+        $this->assertSame($normal->id, SeapWorkerBatch::findOrFail($advBatch['batch_id'])->scan_run_id);
+        $this->assertSame('ADV', $advBatch['request']['family']);
+        $this->upload($advBatch, status: 'unavailable');
+
+        $normalAfterFailure = $normal->fresh();
+        $advErrors = $normalAfterFailure->results['seap']['families']['ADV']['errors'];
+        $this->assertSame('partial', $normalAfterFailure->status);
+        $this->assertSame('error', $normalAfterFailure->results['seap']['families']['ADV']['status']);
+        $this->assertFalse($normalAfterFailure->results['seap']['families']['ADV']['complete']);
+        $this->assertSame('ADV', $normalAfterFailure->checkpoint['_next_batch_family']);
+        $this->assertSame(now()->addHour()->toIso8601String(), $normalAfterFailure->checkpoint['_next_batch_at']);
+        $this->assertSame(now()->addHours(6)->toIso8601String(), $normalAfterFailure->checkpoint['_next_family_batch_at']);
+
+        $backfill = $this->createBackfill();
+        $this->noWork();
+        $this->assertSame('pending', $backfill->fresh()->status);
+        $this->travel(61)->minutes();
+
+        $scnBatch = $this->claim();
+        $this->assertSame('SCN', $scnBatch['request']['family']);
+        $this->assertSame($backfill->id, SeapWorkerBatch::findOrFail($scnBatch['batch_id'])->scan_run_id);
+        $this->upload($scnBatch, [$this->scn(9001)]);
+
+        $this->assertTrue($backfill->fresh()->seapComplete());
+        $this->assertSame('partial', $normal->fresh()->status);
+        $this->assertSame('error', $normal->fresh()->results['seap']['families']['ADV']['status']);
+        $this->assertSame($advErrors, $normal->fresh()->results['seap']['families']['ADV']['errors']);
+        $this->assertSame(2, ScanRun::count());
+        $this->assertSame(1, Notice::where('seap_id', 'SCN:9001')->count());
+        $this->assertDatabaseCount('notice_sources', 1);
+    }
+
+    public function test_adv_rate_limit_cooldown_remains_global_for_scn_backfill(): void
+    {
+        $normal = $this->normalRunWithOnlyAdvIncomplete();
+        $backfill = $this->createBackfill();
+        $advBatch = $this->claim();
+        $this->assertSame('ADV', $advBatch['request']['family']);
+        $this->upload($advBatch, status: '429');
+
+        $normalAfterFailure = $normal->fresh();
+        $this->assertArrayNotHasKey('_next_batch_family', $normalAfterFailure->checkpoint);
+        $this->assertSame(now()->addHours(6)->toIso8601String(), $normalAfterFailure->checkpoint['_next_batch_at']);
+        $this->travel(61)->minutes();
+        $this->noWork();
+        $this->assertSame('pending', $backfill->fresh()->status);
+        $this->travel(300)->minutes();
+
+        $retry = $this->claim();
+        $this->assertSame('ADV', $retry['request']['family']);
+        $this->assertSame($normal->id, SeapWorkerBatch::findOrFail($retry['batch_id'])->scan_run_id);
+        $this->assertSame('pending', $backfill->fresh()->status);
+        $this->assertNotSame('completed', $normal->fresh()->results['seap']['families']['ADV']['status']);
+    }
+
     public function test_completed_normal_cooldown_then_backfill_and_no_delta_watermark_change(): void
     {
         $normal = ScanRun::create(['mode' => 'full', 'status' => 'completed', 'date_from' => '2026-07-01', 'date_to' => '2026-07-01',
@@ -257,7 +331,14 @@ class SeapBackfillTest extends TestCase
         $batch = $this->claim();
         $this->upload($batch, status: $status);
         $this->assertSame('partial', $run->fresh()->status);
-        $this->assertSame(now()->addHours(6)->toIso8601String(), $run->fresh()->checkpoint['_next_batch_at']);
+        $expectedGlobalCooldown = $status === 'unavailable' ? now()->addHour()->toIso8601String() : now()->addHours(6)->toIso8601String();
+        $this->assertSame($expectedGlobalCooldown, $run->fresh()->checkpoint['_next_batch_at']);
+        if ($status === 'unavailable') {
+            $this->assertSame('SCN', $run->fresh()->checkpoint['_next_batch_family']);
+            $this->assertSame(now()->addHours(6)->toIso8601String(), $run->fresh()->checkpoint['_next_family_batch_at']);
+        } else {
+            $this->assertArrayNotHasKey('_next_batch_family', $run->fresh()->checkpoint);
+        }
         $this->artisan('seap:backfill', ['--pause' => $run->id])->assertSuccessful();
         $this->artisan('seap:backfill', ['--resume' => $run->id])->assertSuccessful();
         $this->travel(61)->minutes();

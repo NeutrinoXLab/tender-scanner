@@ -39,6 +39,26 @@ class ScanRun extends Model
             ->sortByDesc(fn (self $run): int => CarbonImmutable::parse($run->checkpoint['_next_batch_at'])->timestamp)->first();
     }
 
+    public static function familyCooldown(string $family): ?self
+    {
+        return static::whereIn('mode', ['full', 'backfill'])->where('checkpoint->_next_batch_family', $family)
+            ->whereNotNull('checkpoint->_next_family_batch_at')->get()
+            ->filter(fn (self $run): bool => CarbonImmutable::parse($run->checkpoint['_next_family_batch_at'])->gt(now()))
+            ->sortByDesc(fn (self $run): int => CarbonImmutable::parse($run->checkpoint['_next_family_batch_at'])->timestamp)->first();
+    }
+
+    /** @param array<int, string> $families */
+    public static function familyCooldownFor(array $families): ?self
+    {
+        foreach ($families as $family) {
+            if ($cooldown = static::familyCooldown($family)) {
+                return $cooldown;
+            }
+        }
+
+        return null;
+    }
+
     /** @return array<int, string> */
     public function families(): array
     {
@@ -49,6 +69,21 @@ class ScanRun extends Model
     {
         return data_get($this->results, 'seap.status') === 'completed'
             && collect($this->families())->every(fn (string $family): bool => (bool) data_get($this->results, "seap.families.$family.complete", false));
+    }
+
+    /** @return array<int, string> */
+    public function incompleteFamilies(): array
+    {
+        return collect($this->families())->reject(fn (string $family): bool => data_get($this->results, "seap.families.$family.status") === 'completed'
+            && (bool) data_get($this->results, "seap.families.$family.complete", false))
+            ->values()->all();
+    }
+
+    public function waitingOnlyOnFamilyCooldowns(): bool
+    {
+        $families = $this->incompleteFamilies();
+
+        return $families !== [] && collect($families)->every(fn (string $family): bool => static::familyCooldown($family) !== null);
     }
 
     public function batchAvailable(): bool

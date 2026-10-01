@@ -242,8 +242,19 @@ class RemoteSeapWorkerTest extends TestCase
         $this->assertCount(1, $run->fresh()->checkpoint['PI']['cursor']['data']['items']);
         $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
         $this->travel(61)->minutes();
-        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
-        $this->travel($cooldown - 60)->minutes();
+        if ($status === 'unavailable') {
+            $otherFamily = $this->claim();
+            $this->assertSame('listing', $otherFamily['request']['kind']);
+            $this->assertSame('ADV', $otherFamily['request']['family']);
+            $this->upload($otherFamily, $this->listing([], 'ADV'))->assertOk();
+            $this->assertSame('PI', $run->fresh()->checkpoint['_next_batch_family']);
+            $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+            $this->travel(61)->minutes();
+            $this->travel($cooldown - 122)->minutes();
+        } else {
+            $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+            $this->travel($cooldown - 60)->minutes();
+        }
         $next = $this->claim();
         $this->assertSame('pi_detail', $next['request']['kind']);
         $this->assertSame(1, $next['request']['id']);

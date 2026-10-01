@@ -33,7 +33,14 @@ class ScanDispatcher
                 if ($cooling) {
                     return $cooling;
                 }
+                $backfill = $seapOnly ? ScanRun::nextBackfill() : null;
+                if ($resume && $backfill && $this->normalRunBlockedByOtherFamilyCooldown($resume, $backfill)) {
+                    $resume = null;
+                }
                 if (! $resume && $seapOnly && ($backfill = ScanRun::nextBackfill())) {
+                    if ($cooling = ScanRun::familyCooldownFor($backfill->families())) {
+                        return $cooling;
+                    }
                     $backfill->update(['status' => 'queued', 'active_key' => 'manual', 'finished_at' => null,
                         'message' => 'Backfill pregătit pentru workerul autorizat.']);
 
@@ -104,5 +111,18 @@ class ScanDispatcher
             }
         }
         RunManualScan::dispatch($run->id, $seapOnly)->onConnection('tender')->onQueue('tender-scans');
+    }
+
+    private function normalRunBlockedByOtherFamilyCooldown(ScanRun $normal, ScanRun $backfill): bool
+    {
+        if (! $normal->waitingOnlyOnFamilyCooldowns()) {
+            return false;
+        }
+
+        $backfillFamiliesAreAvailable = collect($backfill->families())->every(
+            fn (string $family): bool => ScanRun::familyCooldown($family) === null
+        );
+
+        return $backfillFamiliesAreAvailable;
     }
 }

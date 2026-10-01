@@ -24,7 +24,8 @@ class SeapWorkerExchange
                 return $pending;
             }
             $run = app(ScanDispatcher::class)->dispatch(seapOnly: true);
-            if (! ($run->checkpoint['_worker_ready'] ?? false) || ($run->checkpoint['_backfill_hold'] ?? false) || ! $run->batchAvailable() || $run->seapComplete()) {
+            if (! ($run->checkpoint['_worker_ready'] ?? false) || ($run->checkpoint['_backfill_hold'] ?? false)
+                || ! $run->batchAvailable() || $run->seapComplete() || $run->waitingOnlyOnFamilyCooldowns()) {
                 return null;
             }
 
@@ -64,7 +65,7 @@ class SeapWorkerExchange
             $checkpoint['_worker_requests'] = ($checkpoint['_worker_requests'] ?? 0) + 1;
             $run->update(['checkpoint' => $checkpoint]);
             $client = new SeapWorkerClient($batch->request, $payload);
-            $this->advance($run, $client);
+            $this->advance($run, $client, $payload['status'] === 'unavailable' ? $payload['family'] : null);
             abort_unless($client->consumed, 409, 'Checkpoint diferit; lotul nu a fost aplicat.');
             $receipt = ['batch_id' => $batch->id, 'accepted' => true, 'run_id' => $run->id, 'status' => $run->fresh()->status];
             $batch->update(['response_hash' => $hash, 'receipt' => $receipt, 'active_key' => null]);
@@ -73,7 +74,7 @@ class SeapWorkerExchange
         }));
     }
 
-    private function advance(ScanRun $run, SeapWorkerClient $client): void
+    private function advance(ScanRun $run, SeapWorkerClient $client, ?string $familyScopedFailure = null): void
     {
         $context = app(ScanContext::class);
         $originalOptions = collect(['batch_size', 'fetch_adv_details', 'fetch_procedure_details'])
@@ -94,6 +95,9 @@ class SeapWorkerExchange
                     break;
                 }
                 if (($run->results['seap']['families'][$family]['status'] ?? null) === 'completed') {
+                    continue;
+                }
+                if (ScanRun::familyCooldown($family)) {
                     continue;
                 }
                 config(['services.seap.batch_size' => $budget - ($checkpoint['_worker_used'] ?? 0)]);
@@ -122,7 +126,19 @@ class SeapWorkerExchange
             if ($pause) {
                 $interval = max(1, (int) config('services.seap_worker.batch_interval_minutes', 60));
                 if ($failed) {
-                    $interval = max($interval, 360, (int) config('services.seap.batch_interval_minutes', 60));
+                    $failureInterval = max($interval, 360, (int) config('services.seap.batch_interval_minutes', 60));
+                    if ($familyScopedFailure !== null) {
+                        $checkpoint['_next_batch_family'] = $familyScopedFailure;
+                        $checkpoint['_next_family_batch_at'] = now()->addMinutes($failureInterval)->toIso8601String();
+                    } else {
+                        $interval = $failureInterval;
+                        unset($checkpoint['_next_batch_family'], $checkpoint['_next_family_batch_at']);
+                    }
+                } else {
+                    $cooldownFamily = $checkpoint['_next_batch_family'] ?? null;
+                    if ($cooldownFamily === null || ! ScanRun::familyCooldown($cooldownFamily)) {
+                        unset($checkpoint['_next_batch_family'], $checkpoint['_next_family_batch_at']);
+                    }
                 }
                 $checkpoint['_next_batch_at'] = now()->addMinutes($interval)->toIso8601String();
             }
