@@ -46,7 +46,11 @@ class SeapClient
         $method = $family === 'ADV' ? 'GetAdvNoticeList' : 'GetAll';
         $request = $this->request();
         if ($family === 'ADV') {
-            $request->withHeaders(['Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/']);
+            $request->replaceHeaders([
+                'Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/',
+                'Origin' => 'https://e-licitatie.ro',
+                'Accept' => 'application/json, text/plain, */*',
+            ]);
         }
         $data = $this->json($request->post($this->baseUrl.'/'.$config['api'].'/'.$method.'/', $payload));
 
@@ -72,8 +76,15 @@ class SeapClient
 
     public function getAdvNoticeDetails(int $id): array
     {
-        $data = $this->json($this->request()->withHeaders(['Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/'])
-            ->get($this->baseUrl.'/PUBLICAdvNotice/getForView/'.$id));
+        $request = $this->request();
+
+        $request->replaceHeaders([
+            'Referer' => 'https://e-licitatie.ro/pub/notices/adv-notices/',
+            'Origin' => 'https://e-licitatie.ro',
+            'Accept' => 'application/json, text/plain, */*',
+        ]);
+
+        $data = $this->json($request->get($this->baseUrl.'/PUBLICAdvNotice/getForView/'.$id));
         if (($data['advertisingNoticeId'] ?? null) !== $id || ! preg_match('/^ADV\d+$/', $data['noticeNo'] ?? '')) {
             throw new RuntimeException('Detaliu ADV invalid sau pentru alt identificator.');
         }
