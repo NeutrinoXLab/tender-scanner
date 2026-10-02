@@ -52,7 +52,29 @@ class RemoteSeapWorkerTest extends TestCase
 
     private function upload(array $batch, array $payload): TestResponse
     {
-        return $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/batches/'.$batch['batch_id'], $payload);
+        $response = $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/batches/'.$batch['batch_id'], $payload);
+        if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300
+            && ($batch['request']['family'] ?? null) === 'ADV' && ($payload['family'] ?? null) === 'ADV'
+            && ($batch['request']['kind'] ?? null) === 'listing' && ($payload['status'] ?? null) === 'ok'
+            && ($payload['data']['items'] ?? []) !== []) {
+            while (true) {
+                $pendingResponse = $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim');
+                if ($pendingResponse->status() !== 200) {
+                    break;
+                }
+                $pending = $pendingResponse->json();
+                if (($pending['request']['kind'] ?? null) !== 'adv_detail') {
+                    break;
+                }
+                $id = (int) $pending['request']['id'];
+                $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/batches/'.$pending['batch_id'], [
+                    'family' => 'ADV', 'status' => 'ok', 'data' => ['advertisingNoticeId' => $id,
+                        'noticeNo' => 'ADV'.$id, 'contractDescription' => 'Descriere fixture worker'],
+                ]);
+            }
+        }
+
+        return $response;
     }
 
     private function adv(string $title = 'Titlu test', int $id = 1): array
@@ -266,10 +288,19 @@ class RemoteSeapWorkerTest extends TestCase
         config(['services.seap.batch_size' => 2]);
         $run = $this->runFor();
         $this->upload($this->claim(), $this->listing([$this->adv(id: 1), $this->adv(id: 2), $this->adv(id: 3)]))->assertOk();
-        $this->assertDatabaseCount('notices', 2);
+        $this->assertDatabaseCount('notices', 1);
         $this->assertSame('paused', $run->fresh()->status);
         $this->travel(61)->minutes();
-        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+        $details = $this->claim();
+        $this->assertSame('adv_detail', $details['request']['kind']);
+        $this->assertSame(2, $details['request']['id']);
+        $this->upload($details, ['family' => 'ADV', 'status' => 'ok', 'data' => ['advertisingNoticeId' => 2,
+            'noticeNo' => 'ADV2', 'contractDescription' => 'Descriere recuperată']])->assertOk();
+        $lastDetails = $this->claim();
+        $this->assertSame('adv_detail', $lastDetails['request']['kind']);
+        $this->assertSame(3, $lastDetails['request']['id']);
+        $this->upload($lastDetails, ['family' => 'ADV', 'status' => 'ok', 'data' => ['advertisingNoticeId' => 3,
+            'noticeNo' => 'ADV3', 'contractDescription' => 'Ultima descriere']])->assertOk();
         $this->assertDatabaseCount('notices', 3);
         $this->assertTrue($run->fresh()->seapComplete());
         Http::assertNothingSent();
@@ -289,7 +320,17 @@ class RemoteSeapWorkerTest extends TestCase
         $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
         $this->assertSame($checkpoint, $run->fresh()->checkpoint);
         $this->travel(12)->hours();
-        $this->withToken($this->token)->postJson('https://localhost/api/seap-worker/claim')->assertNoContent();
+        $firstDetails = $this->claim();
+        $this->assertSame('adv_detail', $firstDetails['request']['kind']);
+        $this->upload($firstDetails, ['family' => 'ADV', 'status' => 'ok', 'data' => ['advertisingNoticeId' => 1,
+            'noticeNo' => 'ADV1', 'contractDescription' => 'Descriere unu']])->assertOk();
+        $this->assertDatabaseCount('notices', 1);
+        $this->travel(91)->minutes();
+        $secondDetails = $this->claim();
+        $this->assertSame('adv_detail', $secondDetails['request']['kind']);
+        $this->assertSame(2, $secondDetails['request']['id']);
+        $this->upload($secondDetails, ['family' => 'ADV', 'status' => 'ok', 'data' => ['advertisingNoticeId' => 2,
+            'noticeNo' => 'ADV2', 'contractDescription' => 'Descriere doi']])->assertOk();
         $this->assertTrue($run->fresh()->seapComplete());
         $this->assertDatabaseCount('notices', 2);
         $this->assertDatabaseCount('scan_runs', 1);

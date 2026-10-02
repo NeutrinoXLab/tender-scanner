@@ -28,7 +28,9 @@ class SeapImporter
         $requestedTo = $to;
         foreach ($families as $family) {
             $requiresWorkerCnDetails = $family === 'CN' && $this->client instanceof SeapWorkerClient;
+            $requiresWorkerAdvDetails = $family === 'ADV' && $this->client instanceof SeapWorkerClient;
             $fetchProcedureDetails = $requiresWorkerCnDetails || config('services.seap.fetch_procedure_details', false);
+            $fetchAdvDetails = $requiresWorkerAdvDetails || config('services.seap.fetch_adv_details', false);
             $range = $context->runId !== null ? (ScanRun::findOrFail($context->runId)->checkpoint['_ranges'][$family] ?? []) : [];
             $from = $range['from'] ?? $requestedFrom;
             $to = $range['to'] ?? $requestedTo;
@@ -208,7 +210,7 @@ class SeapImporter
                                         $this->error($stats, $exception->getMessage());
                                     }
                                 } elseif ($family === 'ADV') {
-                                    if ($limit > 0 || config('services.seap.fetch_adv_details', false)) {
+                                    if ($limit > 0 || $fetchAdvDetails) {
                                         $payload = $this->client->getAdvNoticeDetails((int) $id);
                                     }
                                 } elseif ($limit > 0 || $fetchProcedureDetails) {
@@ -248,7 +250,7 @@ class SeapImporter
                                 $externalId = $family === 'PI' ? $id : $family.':'.$id;
                                 $before = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
                                 $detailsRequested = $family === 'PI' || $limit > 0 || ($family === 'ADV'
-                                    ? config('services.seap.fetch_adv_details', false) : $fetchProcedureDetails);
+                                    ? $fetchAdvDetails : $fetchProcedureDetails);
                                 $detailsComplete = $detailsRequested && count($stats['errors']) === $itemErrors;
                                 $notice = $this->ingestor->ingest('seap', $externalId, $attributes, $payload + ['listing' => $item, '_details_complete' => $detailsComplete]);
                                 $after = NoticeSource::where('source', 'seap')->where('external_id', $externalId)->value('fingerprint');
