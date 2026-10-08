@@ -4,13 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\Notice;
 use App\Models\UserNotice;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class NoticePersonalController extends Controller
 {
-    public function update(Request $request, Notice $notice): RedirectResponse
+    public function update(Request $request, Notice $notice): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'action' => ['required', 'string', Rule::in(['save', 'unsave', 'ignore', 'restore', 'update'])],
@@ -36,6 +37,14 @@ class NoticePersonalController extends Controller
             'restore' => 'Licitația nu mai este ignorată.',
             'update' => 'Statusul personal și notițele au fost salvate.',
         };
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'is_saved' => $personal->is_saved,
+                'is_ignored' => $personal->is_ignored,
+                'message' => $message,
+            ]);
+        }
 
         return redirect()->route('notices.show', $notice)->with('personal_message', $message);
     }

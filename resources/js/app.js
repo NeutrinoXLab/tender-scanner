@@ -1,3 +1,5 @@
+import './notice-save';
+
 const infoTooltips = [...document.querySelectorAll('[data-info-tooltip]')];
 const closeInfoTooltip = (tooltip) => {
     tooltip.classList.remove('is-open');

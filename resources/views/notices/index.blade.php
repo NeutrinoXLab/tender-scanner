@@ -449,8 +449,8 @@
                         <x-notice-deadline :notice="$notice" />
                         <div class="tender-personal">
                             <x-personal-badge :status="$entry?->personal_status" />
-                            @if($entry?->is_saved)<span class="collection-badge">Salvată</span>@endif
-                            @if($entry?->is_ignored)<span class="collection-badge">Ignorată</span>@endif
+                            <span class="collection-badge" data-saved-badge @if(! $entry?->is_saved) hidden @endif>Salvată</span>
+                            <span class="collection-badge" data-ignored-badge @if(! $entry?->is_ignored) hidden @endif>Ignorată</span>
                         </div>
                     </div>
                     <div class="tender-bottom">
@@ -459,7 +459,7 @@
                             <a class="quiet-action" href="{{ route('notices.suppliers', $notice) }}">Caută furnizori</a>
                             @if($notice->seap_url)<a class="quiet-action" href="{{ $notice->seap_url }}" target="_blank" rel="noopener noreferrer">Anunț oficial SEAP ↗</a>@endif
                             @if($notice->ted_url)<a class="quiet-action" href="{{ $notice->ted_url }}" target="_blank" rel="noopener noreferrer">Vezi anunțul pe TED ↗</a>@endif
-                            <form method="POST" action="{{ route('notices.personal.update', $notice) }}">
+                            <form method="POST" action="{{ route('notices.personal.update', $notice) }}" data-save-notice data-notice-title="{{ $notice->title }}">
                                 @csrf @method('PATCH')
                                 <input type="hidden" name="action" value="{{ $entry?->is_saved ? 'unsave' : 'save' }}">
                                 <button class="quiet-action" aria-label="{{ $entry?->is_saved ? 'Elimină din salvate' : 'Salvează' }}: {{ $notice->title }}">{{ $entry?->is_saved ? 'Elimină din salvate' : 'Salvează' }}</button>
@@ -470,6 +470,7 @@
                                 <button class="quiet-action" aria-label="{{ $entry?->is_ignored ? 'Nu mai ignora' : 'Ignoră' }}: {{ $notice->title }}">{{ $entry?->is_ignored ? 'Nu mai ignora' : 'Ignoră' }}</button>
                             </form>
                         </div>
+                        <p class="muted h-10 overflow-auto" data-save-feedback role="status" aria-live="polite" aria-atomic="true"></p>
                     <details class="mb-4"><summary class="text-sm text-blue-700">Sumar și descriere</summary>
                         <section class="text-sm text-gray-700 border-t pt-3 mt-2" aria-label="Sumar anunț">
                             <h3 class="font-semibold mb-2">Sumar anunț</h3>
